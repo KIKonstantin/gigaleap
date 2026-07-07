@@ -25,6 +25,11 @@ const APEX = (JUMP_SPEED * JUMP_SPEED) / (2 * GRAVITY_UP); // ~110.6 m
 
 const CLIMB_COUNT = 40;
 const CHECKPOINT_EVERY = 8;
+// the finale: the last nodes leave the random wander and orbit the SUN —
+// a ring of platforms around its world position, goal at the end
+const RING_COUNT = 9;
+const RING_R = 130;
+const RING_STEP = Math.PI / 4; // 45 deg per hop -> chord ~99.5 m
 
 const PALETTE = [0x8ecae6, 0xa8dadc, 0xcdb4db, 0xffc8dd, 0xbde0fe, 0xffd6a5];
 const CHECKPOINT_COLOR = 0x95d5b2;
@@ -56,6 +61,7 @@ function buildLevel() {
   ];
 
   let x = 0, y = 0, z = 0; // top-center of the previous platform
+  let ring = null; // set when the course reaches the sun orbit
   let prevHalf = 15;
   let heading = Math.PI; // walk toward -Z first (player spawns facing -Z)
   let easySteps = 2; // gentler jumps right after a checkpoint
@@ -68,6 +74,42 @@ function buildLevel() {
     const isGoal = i === CLIMB_COUNT + 1;
     const isCheckpoint = !isGoal && i % CHECKPOINT_EVERY === 0;
     const p = Math.min(i / CLIMB_COUNT, 1); // difficulty progress 0..1
+
+    // ---- the sun orbit: final nodes circle the sun's world anchor ----
+    if (i > CLIMB_COUNT + 1 - RING_COUNT) {
+      if (!ring) {
+        // center perpendicular-left of the heading, so the previous
+        // platform sits exactly on the circle
+        const cx = x + Math.cos(heading) * RING_R;
+        const cz = z - Math.sin(heading) * RING_R;
+        const theta = Math.atan2(z - cz, x - cx);
+        // rotate whichever way continues the current direction of travel
+        const dir = (-Math.sin(theta) * Math.sin(heading) + Math.cos(theta) * Math.cos(heading)) > 0 ? 1 : -1;
+        ring = { cx, cz, theta, dir, startY: y };
+      }
+      ring.theta += RING_STEP * ring.dir;
+      const rise = 16 + rand() * 6; // min total climb clears the ring's own start
+      y += rise;
+      x = ring.cx + Math.cos(ring.theta) * RING_R;
+      z = ring.cz + Math.sin(ring.theta) * RING_R;
+
+      const width = isGoal ? 15 : isCheckpoint ? 16 : 9 + rand() * 1.5;
+      const thickness = isGoal ? 3 : 2.5 + rand() * 0.8;
+      const color = isGoal ? GOAL_COLOR : isCheckpoint ? CHECKPOINT_COLOR
+        : PALETTE[Math.floor(Math.max(y, 0) / 150) % PALETTE.length];
+      const def = {
+        pos: [round2(x), round2(y - thickness / 2), round2(z)],
+        size: [round2(width), round2(thickness), round2(width)],
+        color,
+      };
+      if (isCheckpoint) def.checkpoint = true;
+      if (isGoal) def.goal = true;
+      platforms.push(def);
+      prevHalf = width / 2;
+      prevAmp = 0;
+      prevVertAmp = 0;
+      continue;
+    }
 
     // wander: signed random turn each node instead of a fixed spiral
     heading += (rand() - 0.5) * 2 * (0.35 + rand() * 0.75); // up to ~63 deg
@@ -182,11 +224,15 @@ function buildLevel() {
     prevVertAmp = vertAmp;
   }
 
-  return platforms;
+  // the sun's world anchor: the center of the orbit, mid-climb height
+  const sunAnchor = [round2(ring.cx), round2(ring.startY + 85), round2(ring.cz)];
+  return { platforms, sunAnchor };
 }
 
 function round2(v) {
   return Math.round(v * 100) / 100;
 }
 
-export const PLATFORMS = buildLevel();
+const built = buildLevel();
+export const PLATFORMS = built.platforms;
+export const SUN_ANCHOR = built.sunAnchor;

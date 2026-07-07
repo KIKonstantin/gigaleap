@@ -7,6 +7,7 @@
 // blinks every 11 seconds exactly; the smile widens as you climb.
 import * as THREE from 'three';
 import { emit } from '../core/events.js';
+import { SUN_ANCHOR } from '../level/levelData.js';
 
 const SUN_DIR = new THREE.Vector3(80, 120, 60).normalize(); // matches the light
 const DISTANCE = 800;
@@ -22,6 +23,7 @@ const sunMaterial = () =>
       uLook: { value: new THREE.Vector2(0, 0) }, // pupil dart, follows your motion
       uSmile: { value: 0 }, // 0..1 — widens as you climb
       uScare: { value: 0 }, // 1 while it is VERY CLOSE and looking at you
+      uMouth: { value: 0 }, // 0..1 jaw drop — it is about to eat you
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -35,6 +37,7 @@ const sunMaterial = () =>
       uniform vec2 uLook;
       uniform float uSmile;
       uniform float uScare;
+      uniform float uMouth;
       varying vec2 vUv;
 
       const vec3 BODY = vec3(1.0, 0.86, 0.55);
@@ -64,7 +67,8 @@ const sunMaterial = () =>
         // eyes — whites, then pupils that stare at YOU and dart when you move
         for (int i = 0; i < 2; i++) {
           vec2 eyeC = vec2(i == 0 ? -0.20 : 0.20, 0.15);
-          vec2 e = (p - eyeC) / (0.105 * (1.0 + 0.35 * uScare)); // eyes widen
+          float wide = max(uScare, uMouth);
+          vec2 e = (p - eyeC) / (0.105 * (1.0 + 0.35 * wide)); // eyes widen
           e.y *= 0.82; // slightly wide ellipse
           float inEye = 1.0 - smoothstep(0.92, 1.0, length(e));
           // the whole eye shuts during a blink
@@ -81,8 +85,10 @@ const sunMaterial = () =>
           col = mix(col, vec3(1.0), glint * open);
         }
 
-        // the smile: an arc that widens the higher you climb
-        float grin = max(uSmile, uScare); // full grin when it visits
+        // the smile: an arc that widens the higher you climb.
+        // no smile down in the pit — it vanishes the moment the jaw starts.
+        float smileVis = 1.0 - smoothstep(0.0, 0.2, uMouth);
+        float grin = max(uSmile, uScare) * smileVis;
         vec2 sm = p - vec2(0.0, 0.03);
         float smR = 0.30 + 0.04 * grin;
         float arc = abs(length(sm) - smR);
@@ -90,12 +96,22 @@ const sunMaterial = () =>
         float spread = 0.55 + 0.5 * grin;
         float angMask = 1.0 - smoothstep(spread - 0.18, spread, abs(ang + 1.5707963));
         float smile = (1.0 - smoothstep(0.016, 0.030, arc)) * angMask * step(sm.y, 0.0);
-        col = mix(col, INK, smile);
+        col = mix(col, INK, smile * smileVis);
         // upturned corner dots appear as it gets happier about your progress
         for (int i = 0; i < 2; i++) {
           vec2 cornerC = vec2((i == 0 ? -1.0 : 1.0) * sin(spread) * smR, 0.03 - cos(spread) * smR);
           float corner = 1.0 - smoothstep(0.012, 0.024, length(p - cornerC));
           col = mix(col, INK, corner * grin);
+        }
+
+        // the mouth: a jaw that drops open into a VOID
+        if (uMouth > 0.01) {
+          vec2 m = (p - vec2(0.0, -0.13)) / vec2(0.30 + 0.15 * uMouth, max(0.47 * uMouth, 0.001));
+          float mouthMask = 1.0 - smoothstep(0.88, 1.0, length(m));
+          // pure black void with a thin dark-red lip at the rim
+          vec3 maw = mix(vec3(0.01, 0.01, 0.02), vec3(0.30, 0.12, 0.12),
+            smoothstep(0.82, 0.98, length(m)));
+          col = mix(col, maw, mouthMask * uMouth);
         }
 
         gl_FragColor = vec4(col, alpha);
@@ -109,6 +125,12 @@ const AWAY_TIME = 1.2; // must look away this long before the next look counts
 const VISIT_DISTANCE = 30;
 const VISIT_SCALE = 0.2;
 const VISIT_TIME = 1.35;
+const WORLD_SCALE = 0.38; // sun size once it anchors over its platform ring
+const rollVisit = () => 3 + Math.floor(Math.random() * 6); // every 3-8 looks
+const EAT_DROP = 80; // this far below your checkpoint, falling fast: doomed
+const EAT_DEPTH = 450; // it waits FAR below — a long stare into the maw
+const EAT_SCALE = 2.6; // enormous when it feeds
+const SWALLOW_DISTANCE = 60;
 
 export function createSun(scene) {
   const mesh = new THREE.Mesh(
@@ -116,32 +138,56 @@ export function createSun(scene) {
     sunMaterial()
   );
   mesh.renderOrder = -1; // background element
+  mesh.frustumCulled = false; // always considered visible — it IS
   scene.add(mesh);
 
   const u = mesh.material.uniforms;
   const right = new THREE.Vector3();
   const up = new THREE.Vector3();
   const viewDir = new THREE.Vector3();
+  const dirToSun = new THREE.Vector3();
+  const anchor = new THREE.Vector3(SUN_ANCHOR[0], SUN_ANCHOR[1], SUN_ANCHOR[2]);
 
-  // it counts your glances. on one of them — the 5th to 8th — it visits.
+  // it counts your glances. every 3rd to 8th of them, it visits.
   let lookCount = 0;
   let looking = false;
   let awayTimer = AWAY_TIME;
-  let visitAt = 5 + Math.floor(Math.random() * 4);
-  let visited = false;
+  let visitAt = rollVisit();
   let visitTimer = 0;
+  let eating = false;
+  let swallowed = false;
+  let eatY = 0;
 
   function reset() {
     lookCount = 0;
     looking = false;
     awayTimer = AWAY_TIME;
-    visitAt = 5 + Math.floor(Math.random() * 4);
-    visited = false;
+    visitAt = lookCount + rollVisit();
     endVisit();
+    endEat();
+  }
+
+  function startEat(camera) {
+    endVisit();
+    eating = true;
+    swallowed = false;
+    eatY = camera.position.y - EAT_DEPTH;
+    // LIGHTNING: it is simply THERE, below you, at full size
+    mesh.position.set(camera.position.x, eatY, camera.position.z);
+    mesh.scale.setScalar(EAT_SCALE);
+    mesh.material.depthTest = false; // nothing hides the maw
+    mesh.renderOrder = 999;
+  }
+
+  function endEat() {
+    eating = false;
+    swallowed = false;
+    mesh.material.depthTest = true;
+    mesh.renderOrder = -1;
   }
 
   function startVisit() {
-    visited = true;
+    visitAt = lookCount + rollVisit(); // and it will visit again
     visitTimer = VISIT_TIME;
     mesh.material.depthTest = false; // nothing may stand between you
     mesh.renderOrder = 999;
@@ -152,12 +198,39 @@ export function createSun(scene) {
     visitTimer = 0;
     mesh.material.depthTest = true;
     mesh.renderOrder = -1;
-    mesh.scale.setScalar(1);
   }
 
-  function update(dt, camera, playerVel, playerHeight, locked) {
+  function update(dt, camera, player, locked) {
+    const playerVel = player.vel;
+    const playerHeight = player.feetY();
     u.uTime.value += dt;
     viewDir.set(0, 0, -1).applyQuaternion(camera.quaternion);
+
+    // THE FEEDING: a doomed fall summons it below you
+    const drop = player.activeCheckpoint.max.y - player.pos.y;
+    if (!eating && locked && !player.grounded && drop > EAT_DROP && playerVel.y < -30) {
+      startEat(camera);
+    }
+    if (eating) {
+      if (player.grounded && !swallowed) { endEat(); } // you escaped. this time.
+      else {
+        // locked under your fall path, mouth opening as you close in
+        dirToSun.set(camera.position.x, eatY, camera.position.z); // reuse as target
+        mesh.position.lerp(dirToSun, 1 - Math.exp(-12 * dt)); // tracks your drift
+        mesh.lookAt(camera.position);
+        u.uMouth.value += (1 - u.uMouth.value) * (1 - Math.exp(-4 * dt));
+        u.uScare.value = 0;
+        u.uSmile.value = 0; // nothing to smile about. dinner time.
+        u.uLook.value.set(0, 0); // it watches you all the way down
+        if (!swallowed && camera.position.y - mesh.position.y < SWALLOW_DISTANCE) {
+          swallowed = true;
+          emit('eaten');
+        }
+        if (swallowed && player.grounded) endEat(); // respawned: done feeding
+        return;
+      }
+    }
+    u.uMouth.value *= Math.exp(-6 * dt); // jaw eases shut
 
     if (visitTimer > 0) {
       // THE VISIT: right in front of you, and it follows your view —
@@ -173,19 +246,25 @@ export function createSun(scene) {
     }
     u.uScare.value = 0;
 
-    // count discrete looks (only while playing)
-    const lookingNow = locked && viewDir.dot(SUN_DIR) > LOOK_COS;
+    // near the summit the sun stops being sky and becomes a PLACE: it
+    // anchors over the final platform ring so you orbit it to the goal
+    const blend = THREE.MathUtils.smoothstep(
+      playerHeight, SUN_ANCHOR[1] - 300, SUN_ANCHOR[1] - 120);
+    mesh.position.copy(camera.position).addScaledVector(SUN_DIR, DISTANCE);
+    mesh.position.lerp(anchor, blend);
+    mesh.scale.setScalar(THREE.MathUtils.lerp(1, WORLD_SCALE, blend));
+    mesh.lookAt(camera.position);
+
+    // count discrete looks toward wherever it currently is (only while playing)
+    dirToSun.copy(mesh.position).sub(camera.position).normalize();
+    const lookingNow = locked && viewDir.dot(dirToSun) > LOOK_COS;
     if (lookingNow && !looking && awayTimer >= AWAY_TIME) {
       lookCount++;
-      if (!visited && lookCount >= visitAt) startVisit();
+      if (lookCount >= visitAt) startVisit();
     }
     if (!lookingNow) awayTimer += dt;
     else awayTimer = 0;
     looking = lookingNow;
-
-    // anchored to the sky: same bearing from wherever you stand
-    mesh.position.copy(camera.position).addScaledVector(SUN_DIR, DISTANCE);
-    mesh.lookAt(camera.position);
 
     // pupils dart toward your movement, then settle back on YOU
     right.set(1, 0, 0).applyQuaternion(mesh.quaternion);

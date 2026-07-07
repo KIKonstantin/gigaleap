@@ -33,7 +33,7 @@ export function createScene() {
     new THREE.MeshBasicMaterial({ color: SKY })
   );
   floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -400;
+  floor.position.y = -1200;
   scene.add(floor);
 
   function followPlayer(pos) {

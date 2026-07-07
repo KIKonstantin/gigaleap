@@ -56,6 +56,9 @@ export function createPostFX(renderer, scene, camera) {
     u.uThump.value = 0.55; // the flinch
     fovKick -= 7;
   });
+  let swallowTarget = 0;
+  on('eaten', () => { swallowTarget = 1; }); // the maw closes over the screen
+  on('respawn', () => { swallowTarget = 0; });
 
   function render(dt, speedFovTarget = 0, rushTarget = 0, verticalVel = 0) {
     u.uPulse.value *= Math.exp(-6 * dt);
@@ -70,6 +73,10 @@ export function createPostFX(renderer, scene, camera) {
     const airTarget = Math.min(Math.max((Math.abs(verticalVel) - 12) / 55, 0), 1);
     u.uAir.value += (airTarget - u.uAir.value) * (1 - Math.exp(-9 * dt));
     if (airTarget === 0 && u.uAir.value < 0.02) u.uAirOff.value = 0; // float hygiene
+
+    // being swallowed: fast to black, gentle release after respawn
+    u.uSwallow.value += (swallowTarget - u.uSwallow.value)
+      * (1 - Math.exp((swallowTarget > u.uSwallow.value ? -14 : -4) * dt));
 
     // dash burst: horizontal streaks flare then die with the dash surplus
     u.uDashAir.value *= Math.exp(-2.2 * dt);

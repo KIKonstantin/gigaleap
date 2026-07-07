@@ -112,6 +112,9 @@ initInput(renderer.domElement, (locked) => {
 
 let runTime = 0;
 let levelTime = 0;
+let eatenTimer = 0; // brief darkness between the maw and the respawn
+
+on('eaten', () => { eatenTimer = 0.35; });
 
 on('win', ({ height }) => {
   hud.showWin(height, runTime);
@@ -138,6 +141,10 @@ function update(dt) {
   stepMovers(movers, levelTime);
   player.step(dt, input);
   stepCrumble(crumblers, dt, player.groundPlatform);
+  if (eatenTimer > 0) {
+    eatenTimer -= dt;
+    if (eatenTimer <= 0) player.devour();
+  }
   runTime += dt;
 }
 
@@ -153,7 +160,7 @@ function render(delta, alpha) {
   camera.rotation.x = input.pitch;
 
   followPlayer(p);
-  sun.update(delta, camera, player.vel, player.feetY(), input.locked);
+  sun.update(delta, camera, player, input.locked);
   hud.setStares(sun.stares());
   syncMoverMeshes(movers, alpha);
   syncCrumbleMeshes(crumblers, levelTime);

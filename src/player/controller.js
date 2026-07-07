@@ -26,7 +26,7 @@ const JUMP_BUFFER = 0.12;
 const JUMP_CUT = 0.45; // vel.y multiplier when Space released while rising
 const HALF = { x: 0.35, y: 0.9, z: 0.35 }; // 1.8 m tall
 const EYE_ABOVE_CENTER = 0.72; // eye at feet + 1.62 m
-const RESPAWN_DROP = 200; // fall this far below the checkpoint top -> respawn
+const RESPAWN_DROP = 700; // failsafe — normally the sun eats you well before this
 const LAND_FX_MIN_IMPACT = 8;
 
 export function createController(platforms) {
@@ -49,6 +49,7 @@ export function createController(platforms) {
     feetY: () => c.pos.y - HALF.y,
     step,
     reset,
+    devour, // the sun got you: respawn at the checkpoint
   };
 
   function placeOn(platform) {
@@ -69,6 +70,12 @@ export function createController(platforms) {
     c.coyoteTimer = 0;
     c.bufferTimer = 0;
     placeOn(startPad);
+  }
+
+  function devour() {
+    if (c.grounded || c.won) return;
+    placeOn(c.activeCheckpoint);
+    emit('respawn');
   }
 
   function step(dt, input) {
