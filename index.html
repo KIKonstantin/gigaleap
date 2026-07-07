@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
+  <title>GIGALEAP</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #dfe8f0; }
+    body { font-family: ui-monospace, 'SF Mono', Menlo, monospace; user-select: none; }
+    canvas { display: block; }
+
+    #hud {
+      position: fixed; top: 24px; left: 28px;
+      color: #3d4a5c; letter-spacing: 0.08em; line-height: 1.7;
+      pointer-events: none;
+    }
+    #hud .label { font-size: 11px; opacity: 0.55; }
+    #hud .value { font-size: 22px; font-weight: 600; }
+
+    #crosshair {
+      position: fixed; top: 50%; left: 50%;
+      width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
+      border-radius: 50%; background: #3d4a5c; opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .overlay {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(223, 232, 240, 0.55);
+      backdrop-filter: blur(6px);
+      cursor: pointer;
+    }
+    .overlay .card {
+      text-align: center; color: #3d4a5c; padding: 48px 64px;
+    }
+    .overlay h1 {
+      font-size: 44px; font-weight: 700; letter-spacing: 0.35em;
+      margin-bottom: 10px; margin-left: 0.35em;
+    }
+    .overlay .sub { font-size: 13px; opacity: 0.65; margin-bottom: 28px; letter-spacing: 0.1em; }
+    .overlay .controls { font-size: 12px; opacity: 0.5; line-height: 2; letter-spacing: 0.08em; }
+    .overlay .cta {
+      margin-top: 30px; font-size: 14px; letter-spacing: 0.2em;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.35; } }
+    .hidden { display: none !important; }
+
+    #winOverlay h1 { color: #b8860b; }
+    #winStats { font-size: 15px; letter-spacing: 0.12em; line-height: 2; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div class="label">HEIGHT</div>
+    <div class="value" id="height">0.0 m</div>
+    <div class="label">BEST</div>
+    <div class="value" id="best">0.0 m</div>
+  </div>
+  <div id="crosshair"></div>
+
+  <div id="startOverlay" class="overlay">
+    <div class="card">
+      <h1>GIGALEAP</h1>
+      <div class="sub">CLIMB TO THE GOLDEN LIGHT</div>
+      <div class="controls">
+        WASD — MOVE<br />
+        MOUSE — LOOK<br />
+        SHIFT — SPRINT<br />
+        SPACE — JUMP<br />
+        CTRL — AIR DASH<br />
+        R — RESTART
+      </div>
+      <div class="cta">CLICK TO PLAY</div>
+    </div>
+  </div>
+
+  <div id="winOverlay" class="overlay hidden">
+    <div class="card">
+      <h1>YOU MADE IT</h1>
+      <div id="winStats"></div>
+      <div class="cta">PRESS R TO RESTART</div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,192 @@
+// Level definition — pure data, no three.js imports (node-testable).
+// The course is generated once from a fixed seed, so the level is identical
+// every run. Every gap is placed within jump reach computed from the
+// controller's real HEAVY hulk physics: asymmetric gravity (35 up / 70 down),
+// jump 88 m/s, sprint 35 — ~100 m leaps that last ~4.3 s.
+//
+// Placement wanders randomly (signed turns, mixed rises including flats and
+// slight descents) instead of a tight spiral, so the course spreads out
+// horizontally. Some nodes are crumbling BRIDGES: 8-10 square segments in an
+// axis-aligned line with 0.3 m cracks (narrower than the player, so intact
+// bridges run seamlessly). Segments drop 0.55 s after being touched — you
+// sprint across or you fall (see crumble.js).
+//
+// Moving platforms swing around their base position; their amplitude (and
+// the previous platform's) is subtracted from the allowed gap so every jump
+// stays makeable at the movers' worst positions.
+//
+// Anti-tunneling contract: every thickness >= 2.5 (terminal velocity 130).
+
+const JUMP_SPEED = 88;
+const GRAVITY_UP = 35;
+const GRAVITY_DOWN = 70;
+const SPRINT_SPEED = 35;
+const APEX = (JUMP_SPEED * JUMP_SPEED) / (2 * GRAVITY_UP); // ~110.6 m
+
+const CLIMB_COUNT = 40;
+const CHECKPOINT_EVERY = 8;
+
+const PALETTE = [0x8ecae6, 0xa8dadc, 0xcdb4db, 0xffc8dd, 0xbde0fe, 0xffd6a5];
+const CHECKPOINT_COLOR = 0x95d5b2;
+const GOAL_COLOR = 0xffd166;
+const BRIDGE_COLOR = 0xe89c94; // warm coral — reads as "danger" in the palette
+const DASH_COLOR = 0x9d8df1; // periwinkle — the "you need the dash" signal
+
+const SEG = 9; // bridge segments are square, flat, and axis-aligned
+const CRACK = 0.3; // narrower than the player (0.7) — can't fall in or snag
+
+// Max horizontal distance clearable when landing `rise` meters higher,
+// taking off at full sprint. Rise and fall use different gravities.
+function jumpRange(rise) {
+  if (rise >= APEX) return 0;
+  const tUp = JUMP_SPEED / GRAVITY_UP;
+  const tDown = Math.sqrt((2 * (APEX - rise)) / GRAVITY_DOWN);
+  return SPRINT_SPEED * (tUp + tDown);
+}
+
+function lcg(seed) {
+  let s = seed >>> 0;
+  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+}
+
+function buildLevel() {
+  const rand = lcg(20260707);
+  const platforms = [
+    { pos: [0, -1.5, 0], size: [30, 3, 30], color: PALETTE[0], checkpoint: true },
+  ];
+
+  let x = 0, y = 0, z = 0; // top-center of the previous platform
+  let prevHalf = 15;
+  let heading = Math.PI; // walk toward -Z first (player spawns facing -Z)
+  let easySteps = 2; // gentler jumps right after a checkpoint
+  let moverSlot = 0;
+  let bridgeSlot = 0;
+  let dashSlot = 0;
+  let prevAmp = 0, prevVertAmp = 0;
+
+  for (let i = 1; i <= CLIMB_COUNT + 1; i++) {
+    const isGoal = i === CLIMB_COUNT + 1;
+    const isCheckpoint = !isGoal && i % CHECKPOINT_EVERY === 0;
+    const p = Math.min(i / CLIMB_COUNT, 1); // difficulty progress 0..1
+
+    // wander: signed random turn each node instead of a fixed spiral
+    heading += (rand() - 0.5) * 2 * (0.35 + rand() * 0.75); // up to ~63 deg
+
+    const eligible = !isGoal && !isCheckpoint && easySteps <= 0 && i > 4;
+
+    // ---- crumbling sprint-bridge node ----
+    if (eligible && ++bridgeSlot % 8 === 4) {
+      // snap to the nearest compass axis: segments are axis-aligned boxes
+      heading = Math.round(heading / (Math.PI / 2)) * (Math.PI / 2);
+      const ux = Math.round(Math.sin(heading));
+      const uz = Math.round(Math.cos(heading));
+      const segCount = 8 + Math.floor(rand() * 3);
+      const thickness = 2.6 + rand() * 0.4;
+
+      // entry jump onto the first segment, then a flat run of squares
+      const rise = 8 + rand() * 12;
+      const gap = Math.min(60 + rand() * 30, jumpRange(rise) - (50 - 20 * p));
+      x += ux * (prevHalf + gap + SEG / 2);
+      z += uz * (prevHalf + gap + SEG / 2);
+      y += rise;
+
+      for (let k = 0; k < segCount; k++) {
+        if (k > 0) {
+          x += ux * (SEG + CRACK);
+          z += uz * (SEG + CRACK);
+        }
+        platforms.push({
+          pos: [round2(x), round2(y - thickness / 2), round2(z)],
+          size: [SEG, round2(thickness), SEG],
+          color: BRIDGE_COLOR,
+          crumble: true,
+        });
+      }
+      prevHalf = SEG / 2;
+      prevAmp = 0;
+      prevVertAmp = 0;
+      continue;
+    }
+
+    // dash-only gaps: placed just BEYOND max jump range, reachable only with
+    // the Ctrl air-dash. Never after a mover (its sway would stack on top).
+    const isDash = eligible && prevAmp === 0 && prevVertAmp === 0
+      && ++dashSlot % 5 === 2;
+    // roughly every 3rd eligible platform moves; every 3rd mover is vertical
+    const isMover = eligible && !isDash && ++moverSlot % 3 === 0;
+    const isVertical = isMover && moverSlot % 9 === 0;
+    const amp = isMover && !isVertical ? 25 + rand() * 20 : 0;
+    const vertAmp = isVertical ? 15 + rand() * 10 : 0;
+
+    // mixed rises: mostly climbs, some near-flats, occasional slight descents
+    const roll = rand();
+    let rise = roll < 0.15 ? -12 + rand() * 8
+      : roll < 0.4 ? 4 + rand() * 10
+      : 18 + rand() * (20 + 8 * p);
+    if (vertAmp) rise = Math.min(rise, 45); // keep worst-case rise jumpable
+    let gap = 80 + rand() * 40 + 40 * p;
+    if (easySteps > 0 || isCheckpoint || isGoal) {
+      rise = Math.min(rise, 25);
+      gap = Math.min(gap, 90);
+      easySteps--;
+    }
+    if (isDash) {
+      rise = 4 + rand() * 8; // dashes are horizontal — keep the rise gentle
+      gap = jumpRange(rise) + 14 + rand() * 8; // beyond jump range, within dash range
+    } else {
+      // hard reachability clamp at the movers' worst positions, with a safety
+      // margin that shrinks as skill grows
+      const margin = 50 - 20 * p + amp + prevAmp;
+      gap = Math.min(gap, jumpRange(rise + vertAmp + prevVertAmp) - margin);
+    }
+
+    const width = isGoal ? 15 : isCheckpoint ? 16
+      : (isDash ? 16 : 14) - 5.5 * p + (rand() - 0.5) * 2;
+    const half = width / 2;
+    const thickness = isGoal ? 3 : 2.5 + rand() * 0.8;
+
+    const dist = prevHalf + gap + half;
+    x += Math.sin(heading) * dist;
+    z += Math.cos(heading) * dist;
+    y += rise;
+
+    const color = isGoal ? GOAL_COLOR : isCheckpoint ? CHECKPOINT_COLOR
+      : isDash ? DASH_COLOR
+      : PALETTE[Math.floor(Math.max(y, 0) / 150) % PALETTE.length];
+
+    const def = {
+      pos: [round2(x), round2(y - thickness / 2), round2(z)],
+      size: [round2(width), round2(thickness), round2(width)],
+      color,
+    };
+    if (isCheckpoint) def.checkpoint = true;
+    if (isGoal) def.goal = true;
+    if (isDash) def.dash = true;
+    if (isMover) {
+      // horizontal movers sway perpendicular to the approach direction
+      const dir = isVertical
+        ? [0, 1, 0]
+        : [round2(Math.cos(heading)), 0, round2(-Math.sin(heading))];
+      def.move = {
+        dir,
+        amplitude: round2(amp || vertAmp),
+        period: round2(10 + rand() * 7), // slow, heavy islands
+        phase: round2(rand() * Math.PI * 2),
+      };
+    }
+    platforms.push(def);
+
+    if (isCheckpoint) easySteps = 2;
+    prevHalf = half;
+    prevAmp = amp;
+    prevVertAmp = vertAmp;
+  }
+
+  return platforms;
+}
+
+function round2(v) {
+  return Math.round(v * 100) / 100;
+}
+
+export const PLATFORMS = buildLevel();
