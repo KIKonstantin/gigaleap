@@ -52,6 +52,10 @@ export function createPostFX(renderer, scene, camera) {
     u.uDashAir.value = 1.0; // horizontal air burst
     fovKick += 12; // the dash punch
   });
+  on('scare', () => {
+    u.uThump.value = 0.55; // the flinch
+    fovKick -= 7;
+  });
 
   function render(dt, speedFovTarget = 0, rushTarget = 0, verticalVel = 0) {
     u.uPulse.value *= Math.exp(-6 * dt);

@@ -4,6 +4,8 @@ const BEST_KEY = 'gigaleap-best';
 export function createHUD() {
   const heightEl = document.getElementById('height');
   const bestEl = document.getElementById('best');
+  const staresEl = document.getElementById('stares');
+  let lastStares = -1;
   const startOverlay = document.getElementById('startOverlay');
   const winOverlay = document.getElementById('winOverlay');
   const winStats = document.getElementById('winStats');
@@ -32,8 +34,15 @@ export function createHUD() {
     startOverlay.classList.add('hidden');
   }
 
+  function setStares(n) {
+    if (n === lastStares) return;
+    lastStares = n;
+    staresEl.textContent = String(n);
+  }
+
   return {
     update,
+    setStares,
     showWin,
     hideWin: () => winOverlay.classList.add('hidden'),
     isWinShown: () => !winOverlay.classList.contains('hidden'),

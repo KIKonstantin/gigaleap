@@ -3,6 +3,7 @@ import { startLoop } from './core/loop.js';
 import { input, initInput } from './core/input.js';
 import { on } from './core/events.js';
 import { createScene } from './world/scene.js';
+import { createSun } from './world/sun.js';
 import { buildLevel, syncMoverMeshes } from './level/level.js';
 import { stepMovers } from './level/movers.js';
 import { stepCrumble, restoreCrumble, syncCrumbleMeshes } from './level/crumble.js';
@@ -27,6 +28,7 @@ const camera = new THREE.PerspectiveCamera(
 );
 camera.rotation.order = 'YXZ';
 
+const sun = createSun(scene);
 const { colliders: platforms, movers, crumblers } = buildLevel(scene);
 const player = createController(platforms);
 
@@ -121,6 +123,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') {
     player.reset();
     restoreCrumble(crumblers);
+    sun.reset();
     levelShown = 0;
     hintsShown.clear();
     runTime = 0;
@@ -150,6 +153,8 @@ function render(delta, alpha) {
   camera.rotation.x = input.pitch;
 
   followPlayer(p);
+  sun.update(delta, camera, player.vel, player.feetY(), input.locked);
+  hud.setStares(sun.stares());
   syncMoverMeshes(movers, alpha);
   syncCrumbleMeshes(crumblers, levelTime);
   shockwaves.update(delta);
@@ -163,7 +168,7 @@ function render(delta, alpha) {
   postfx.render(delta, sprinting ? 9 : 0, rush, player.vel.y);
 }
 
-window.__ascent = { player, input, on, movers, platforms, crumblers }; // debug/testing handle
+window.__ascent = { player, input, on, movers, platforms, crumblers, sun }; // debug/testing handle
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
