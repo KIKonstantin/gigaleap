@@ -3,7 +3,9 @@
 // tower would be unusably low-res.
 import * as THREE from 'three';
 
-const SKY = 0xdfe8f0;
+// matches the hand-drawn sky's average tone, so fog fades the distance
+// into the painting believably
+const SKY = 0xdcebe0;
 
 export function createScene() {
   const scene = new THREE.Scene();

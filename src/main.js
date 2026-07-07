@@ -4,6 +4,7 @@ import { input, initInput } from './core/input.js';
 import { on } from './core/events.js';
 import { createScene } from './world/scene.js';
 import { createSun } from './world/sun.js';
+import { createSkyDome } from './world/skyDome.js';
 import { buildLevel, syncMoverMeshes } from './level/level.js';
 import { stepMovers } from './level/movers.js';
 import { stepCrumble, restoreCrumble, syncCrumbleMeshes } from './level/crumble.js';
@@ -29,6 +30,7 @@ const camera = new THREE.PerspectiveCamera(
 camera.rotation.order = 'YXZ';
 
 const sun = createSun(scene);
+const skyDome = createSkyDome(scene);
 const { colliders: platforms, movers, crumblers } = buildLevel(scene);
 const player = createController(platforms);
 
@@ -160,6 +162,7 @@ function render(delta, alpha) {
   camera.rotation.x = input.pitch;
 
   followPlayer(p);
+  skyDome.follow(camera.position);
   sun.update(delta, camera, player, input.locked);
   hud.setStares(sun.stares());
   syncMoverMeshes(movers, alpha);
