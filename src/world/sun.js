@@ -40,8 +40,8 @@ const sunMaterial = () =>
       uniform float uMouth;
       varying vec2 vUv;
 
-      const vec3 BODY = vec3(1.0, 0.86, 0.55);
-      const vec3 EDGE = vec3(1.0, 0.78, 0.42);
+      const vec3 BODY = vec3(1.0, 0.76, 0.28); // rich gold — pops off the pale sky
+      const vec3 EDGE = vec3(1.0, 0.62, 0.16);
       const vec3 INK = vec3(0.16, 0.20, 0.27); // slate, matches the world text
 
       void main() {
@@ -57,7 +57,18 @@ const sunMaterial = () =>
         // body disc with a soft warm edge
         float disc = 1.0 - smoothstep(0.54, 0.56, r);
         vec3 col = mix(EDGE, BODY, 1.0 - smoothstep(0.15, 0.56, r));
-        float alpha = max(disc, rays * 0.9);
+        float alpha = max(disc, rays);
+
+        // warm halo beyond the rays — separates it from any sky behind
+        float halo = (1.0 - smoothstep(0.58, 1.0, r)) * 0.3;
+        if (alpha < halo) {
+          col = vec3(1.0, 0.9, 0.62);
+          alpha = halo;
+        }
+
+        // thin ink outline on the disc: drawn-on-top sticker energy
+        float outline = 1.0 - smoothstep(0.008, 0.018, abs(r - 0.555));
+        col = mix(col, INK, outline * 0.85);
 
         // blink: every 11 s exactly, which is its own kind of wrong
         float bp = fract(uTime / 11.0);
@@ -123,13 +134,13 @@ const sunMaterial = () =>
 const LOOK_COS = Math.cos(0.32); // ~18 degrees counts as looking at it
 const AWAY_TIME = 1.2; // must look away this long before the next look counts
 const VISIT_DISTANCE = 30;
-const VISIT_SCALE = 0.2;
+const VISIT_SCALE = 0.5;
 const VISIT_TIME = 1.35;
 const WORLD_SCALE = 0.38; // sun size once it anchors over its platform ring
 const rollVisit = () => 3 + Math.floor(Math.random() * 6); // every 3-8 looks
 const EAT_DROP = 80; // this far below your checkpoint, falling fast: doomed
 const EAT_DEPTH = 450; // it waits FAR below — a long stare into the maw
-const EAT_SCALE = 2.6; // enormous when it feeds
+const EAT_SCALE = 5.6; // enormous when it feeds
 const SWALLOW_DISTANCE = 60;
 
 export function createSun(scene) {
