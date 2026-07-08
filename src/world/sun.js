@@ -24,6 +24,7 @@ const sunMaterial = () =>
       uSmile: { value: 0 }, // 0..1 — widens as you climb
       uScare: { value: 0 }, // 1 while it is VERY CLOSE and looking at you
       uMouth: { value: 0 }, // 0..1 jaw drop — it is about to eat you
+      uDim: { value: 0 }, // 1 = eclipsed: the sun goes out
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -38,6 +39,7 @@ const sunMaterial = () =>
       uniform float uSmile;
       uniform float uScare;
       uniform float uMouth;
+      uniform float uDim;
       varying vec2 vUv;
 
       const vec3 BODY = vec3(1.0, 0.76, 0.28); // rich gold — pops off the pale sky
@@ -125,6 +127,7 @@ const sunMaterial = () =>
           col = mix(col, maw, mouthMask * uMouth);
         }
 
+        col *= mix(1.0, 0.22, uDim); // eclipsed: the light goes out
         gl_FragColor = vec4(col, alpha);
         if (alpha < 0.01) discard;
       }
@@ -169,6 +172,7 @@ export function createSun(scene) {
   let swallowed = false;
   let eatY = 0;
   let angry = 0; // sunRays charging: the scare-face becomes a target-lock face
+  let dim = 0; // eclipse darkness (world/eclipse.js drives it)
   let eatEnabled = true; // debug: the sun can be told to fast
 
   function reset() {
@@ -217,6 +221,7 @@ export function createSun(scene) {
     const playerVel = player.vel;
     const playerHeight = player.feetY();
     u.uTime.value += dt;
+    u.uDim.value = dim;
     viewDir.set(0, 0, -1).applyQuaternion(camera.quaternion);
 
     // THE FEEDING: a doomed fall summons it below you
@@ -267,7 +272,7 @@ export function createSun(scene) {
       playerHeight, SUN_ANCHOR[1] - 300, SUN_ANCHOR[1] - 120);
     mesh.position.copy(camera.position).addScaledVector(SUN_DIR, DISTANCE);
     mesh.position.lerp(anchor, blend);
-    mesh.scale.setScalar(THREE.MathUtils.lerp(1, WORLD_SCALE, blend));
+    mesh.scale.setScalar(THREE.MathUtils.lerp(1, WORLD_SCALE, blend) * (1 - 0.15 * dim));
     mesh.lookAt(camera.position);
 
     // count discrete looks toward wherever it currently is (only while playing)
@@ -303,6 +308,7 @@ export function createSun(scene) {
     isEating: () => eating,
     position: mesh.position, // live ref — read-only by convention
     setAngry: (v) => { angry = v; },
+    setDim: (v) => { dim = v; },
     setEatEnabled: (v) => { eatEnabled = v; },
     forceVisit: () => startVisit(), // debug
   };

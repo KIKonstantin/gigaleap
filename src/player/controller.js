@@ -3,6 +3,7 @@
 // Pure JS (no three.js import) so it can be unit-tested in node.
 import { resolveAxis, overlaps } from './collision.js';
 import { pointInCloud } from '../level/clouds.js';
+import { pointInWind } from '../level/wind.js';
 import { emit } from '../core/events.js';
 
 // HEAVY hulk tuning: asymmetric gravity — you launch hard against 35 m/s²
@@ -25,6 +26,7 @@ export const TUNING = {
   FRICTION: 160, // scaled to sprint 35 — release keys, stop in ~3.8 m
   CLOUD_DRAG: 2.0, // /s — horizontal velocity bleed while inside a cloud
   CLOUD_AIR_ACCEL: 10, // air control barely works in there — dash through
+  BOUNCE_VY: 119, // bounce pad launch (~1.35x jump, apex ~202 m)
 };
 export const TUNING_DEFAULTS = Object.freeze({ ...TUNING });
 
@@ -37,7 +39,7 @@ const EYE_ABOVE_CENTER = 0.72; // eye at feet + 1.62 m
 const RESPAWN_DROP = 700; // failsafe — normally the sun eats you well before this
 const LAND_FX_MIN_IMPACT = 8;
 
-export function createController(platforms, clouds = []) {
+export function createController(platforms, clouds = [], winds = []) {
   const startPad = platforms[0];
 
   const c = {
@@ -55,6 +57,7 @@ export function createController(platforms, clouds = []) {
     bufferTimer: 0,
     jumpCutDone: true,
     inCloud: false, // airborne inside a drag cloud (see level/clouds.js)
+    inWind: null, // airborne inside a gust zone (see level/wind.js)
     flying: false, // debug noclip: WASD + Space up / Ctrl down, no collision
     flySpeed: 40,
     invincible: false, // debug: fall failsafe off, sun refuses to eat
@@ -118,6 +121,10 @@ export function createController(platforms, clouds = []) {
         c.inCloud = false;
         emit('cloudexit');
       }
+      if (c.inWind) {
+        c.inWind = null;
+        emit('windexit');
+      }
       input.jumpQueued = false;
       input.dashQueued = false;
       const fwd = (input.forward ? 1 : 0) - (input.back ? 1 : 0);
@@ -152,6 +159,11 @@ export function createController(platforms, clouds = []) {
     const wasInCloud = c.inCloud;
     c.inCloud = !c.grounded && pointInCloud(clouds, c.pos);
     if (c.inCloud !== wasInCloud) emit(c.inCloud ? 'cloudenter' : 'cloudexit');
+
+    // --- wind: a steady sideways shove while airborne in a gust zone ---
+    const wasInWind = c.inWind;
+    c.inWind = !c.grounded ? pointInWind(winds, c.pos) : null;
+    if (!!c.inWind !== !!wasInWind) emit(c.inWind ? 'windenter' : 'windexit');
 
     c.coyoteTimer -= dt;
     c.bufferTimer -= dt;
@@ -240,6 +252,12 @@ export function createController(platforms, clouds = []) {
           c.vel.z *= f;
         }
       }
+      // wind shove. Added velocity survives the input clamp (it measures
+      // pre-input speed) and only bleeds via the dash-surplus decay.
+      if (c.inWind) {
+        c.vel.x += c.inWind.def.dir[0] * c.inWind.def.strength * dt;
+        c.vel.z += c.inWind.def.dir[2] * c.inWind.def.strength * dt;
+      }
     }
 
     // --- gravity (always applied, so the ground re-collides every step);
@@ -274,8 +292,9 @@ export function createController(platforms, clouds = []) {
     // --- transitions and events ---
     if (c.grounded && !wasGrounded) {
       // heavy landing plants: absorb horizontal momentum unless the player
-      // is actively running through the touchdown
-      if (fwd === 0 && strafe === 0) {
+      // is actively running through the touchdown. Bounce pads never plant —
+      // the launch keeps your full horizontal speed.
+      if (!groundPlatform.def.bounce && fwd === 0 && strafe === 0) {
         c.vel.x *= LANDING_PLANT;
         c.vel.z *= LANDING_PLANT;
       }
@@ -293,6 +312,20 @@ export function createController(platforms, clouds = []) {
       if (groundPlatform.def.goal && !c.won) {
         c.won = true;
         emit('win', { height: c.feetY() });
+      }
+      // bounce pad: auto-launch. The dash was already restored by the
+      // Y-resolve; consume any buffered jump so it can't double-fire later,
+      // and disarm the jump-cut so releasing Space can't kill the launch.
+      if (groundPlatform.def.bounce) {
+        c.vel.y = T.BOUNCE_VY;
+        c.grounded = false;
+        c.groundPlatform = null;
+        c.jumpCutDone = true;
+        c.bufferTimer = 0;
+        emit('bounce', {
+          platform: groundPlatform,
+          position: { x: c.pos.x, y: groundPlatform.max.y, z: c.pos.z },
+        });
       }
     }
     if (!c.grounded && wasGrounded && c.vel.y <= 0) {

@@ -1,6 +1,7 @@
 // Tiny pub/sub so FX and UI never import the controller.
 // Events: 'jump' | 'land' | 'respawn' | 'win' | 'dash' | 'scare' | 'eaten'
-//       | 'sunray' | 'rayhit' | 'cloudenter' | 'cloudexit'
+//       | 'sunray' | 'rayhit' | 'cloudenter' | 'cloudexit' | 'bounce'
+//       | 'windenter' | 'windexit' | 'eclipse'
 const listeners = new Map();
 
 export function on(event, fn) {

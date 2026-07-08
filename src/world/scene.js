@@ -7,12 +7,18 @@ import * as THREE from 'three';
 // into the painting believably
 const SKY = 0xdcebe0;
 
+// daylight presets for the eclipse (world/eclipse.js): f=1 day, f=0 darkness
+const DAY = { hemi: 0.85, dir: 1.9 };
+const DUSK = { hemi: 0.12, dir: 0.15 };
+const DUSK_SKY = 0x1a2333;
+
 export function createScene() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(SKY);
   scene.fog = new THREE.Fog(SKY, 100, 700); // ~100 m gaps need long sightlines
 
-  scene.add(new THREE.HemisphereLight(0xe8f1ff, 0xb8c4d0, 0.85));
+  const hemi = new THREE.HemisphereLight(0xe8f1ff, 0xb8c4d0, 0.85);
+  scene.add(hemi);
 
   const sun = new THREE.DirectionalLight(0xfff4e0, 1.9);
   sun.castShadow = true;
@@ -36,5 +42,16 @@ export function createScene() {
     sun.target.position.set(pos.x, pos.y, pos.z);
   }
 
-  return { scene, followPlayer };
+  // eclipse dimmer: lerp lights + sky/fog color between day (1) and dark (0).
+  // The sea's injected shader reads the fog color uniform, so it follows.
+  const daySky = new THREE.Color(SKY);
+  const duskSky = new THREE.Color(DUSK_SKY);
+  function setDaylight(f) {
+    hemi.intensity = DUSK.hemi + (DAY.hemi - DUSK.hemi) * f;
+    sun.intensity = DUSK.dir + (DAY.dir - DUSK.dir) * f;
+    scene.background.copy(duskSky).lerp(daySky, f);
+    scene.fog.color.copy(scene.background);
+  }
+
+  return { scene, followPlayer, setDaylight };
 }

@@ -22,7 +22,7 @@ export function buildLevel(scene) {
     // unstable platforms glow DANGER RED as their stand-timer climbs
     const baseEmissive = def.goal ? 1.4 : def.checkpoint ? 0.55
       : def.move ? 0.18 : def.crumble ? 0.14 : def.dash ? 0.3
-      : def.unstable ? 0.1 : 0;
+      : def.bounce ? 0.2 : def.unstable ? 0.1 : 0;
     const material = new THREE.MeshStandardMaterial({
       color: def.color,
       roughness: 0.85,

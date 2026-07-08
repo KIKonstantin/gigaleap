@@ -2,18 +2,24 @@ import * as THREE from 'three';
 import { startLoop } from './core/loop.js';
 import { input, initInput } from './core/input.js';
 import { on } from './core/events.js';
+import { createAudio } from './core/audio.js';
 import { createScene } from './world/scene.js';
 import { createSun } from './world/sun.js';
 import { createSunRays } from './world/sunRays.js';
 import { createSkyDome } from './world/skyDome.js';
 import { createClouds } from './world/clouds.js';
 import { createSea } from './world/sea.js';
+import { createWindStreaks } from './world/windStreaks.js';
+import { createRain } from './world/rain.js';
+import { createEclipse } from './world/eclipse.js';
 import { initClouds } from './level/clouds.js';
-import { CLOUDS } from './level/levelData.js';
+import { initWind } from './level/wind.js';
+import { CLOUDS, WIND_ZONES } from './level/levelData.js';
 import { buildLevel, syncMoverMeshes } from './level/level.js';
 import { stepMovers } from './level/movers.js';
 import { stepCrumble, restoreCrumble, syncCrumbleMeshes } from './level/crumble.js';
 import { stepUnstable, restoreUnstable, syncUnstableMeshes } from './level/unstable.js';
+import { createBouncePads } from './level/bouncePads.js';
 import { createController, TUNING } from './player/controller.js';
 import { createPostFX } from './fx/postfx.js';
 import { createShockwaves } from './fx/shockwave.js';
@@ -30,7 +36,7 @@ renderer.shadowMap.type = THREE.PCFShadowMap; // softness via shadow.radius (PCF
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 document.body.appendChild(renderer.domElement);
 
-const { scene, followPlayer } = createScene();
+const { scene, followPlayer, setDaylight } = createScene();
 const camera = new THREE.PerspectiveCamera(
   75, window.innerWidth / window.innerHeight, 0.1, 4000
 );
@@ -41,7 +47,10 @@ const skyDome = createSkyDome(scene);
 const { colliders: platforms, movers, crumblers, unstables } = buildLevel(scene);
 const clouds = initClouds(CLOUDS);
 const cloudScape = createClouds(scene);
-const player = createController(platforms, clouds);
+const winds = initWind(WIND_ZONES);
+const windStreaks = createWindStreaks(scene);
+const rain = createRain(scene);
+const player = createController(platforms, clouds, winds);
 
 // spawn facing the first platform
 const first = platforms[1];
@@ -52,6 +61,7 @@ input.yaw = Math.atan2(
 const postfx = createPostFX(renderer, scene, camera);
 const shockwaves = createShockwaves(scene);
 const platformPulse = createPlatformPulse();
+const bouncePads = createBouncePads(platforms);
 const levelText = createLevelText(scene);
 const hud = createHUD();
 
@@ -60,7 +70,16 @@ const hud = createHUD();
 const checkpoints = platforms.filter((p) => p.def.checkpoint);
 let levelShown = 0;
 
-const sunRays = createSunRays(scene, { sun, player, getLevel: () => levelShown });
+const eclipse = createEclipse({
+  setDaylight: (F) => { setDaylight(F); skyDome.setDaylight(F); },
+  sun,
+  getLevel: () => levelShown,
+});
+const sunRays = createSunRays(scene, {
+  sun, player,
+  getLevel: () => levelShown,
+  isEclipsed: () => eclipse.isDark(),
+});
 const sea = createSea(scene, { getLevel: () => levelShown });
 
 // one-shot flavor texts; each fires once per run
@@ -119,12 +138,18 @@ on('land', ({ platform }) => {
 const hints = new Map();
 let unstableHinted = false;
 let cloudHinted = false;
+let bounceHinted = false;
+let windHinted = false;
+const windTargets = new Set(WIND_ZONES.map((z) => z.idx));
 for (let i = 1; i < platforms.length; i++) {
   const cur = platforms[i], prev = platforms[i - 1];
   if (cur.def.crumble && !prev.def.crumble) {
     hints.set(prev, { text: 'SPRINT', color: 0xd9756b, target: cur });
   } else if (cur.def.dash) {
     hints.set(prev, { text: 'DASH', color: 0x7a68e8, target: cur });
+  } else if (cur.def.bounce && !bounceHinted && !hints.has(prev)) {
+    hints.set(prev, { text: 'BOUNCE', color: 0x74a857, target: cur });
+    bounceHinted = true;
   } else if (cur.def.cloud && !cloudHinted && !hints.has(prev)) {
     hints.set(prev, { text: 'DASH THROUGH', color: 0x8fa8b8, target: cur });
     cloudHinted = true;
@@ -132,6 +157,9 @@ for (let i = 1; i < platforms.length; i++) {
     // only the first one gets a warning — after that the wobble teaches you
     hints.set(prev, { text: 'NO CAMPING', color: 0xc96f5a, target: cur });
     unstableHinted = true;
+  } else if (windTargets.has(i) && !windHinted && !hints.has(prev)) {
+    hints.set(prev, { text: 'LEAN IN', color: 0xa3b8cc, target: cur });
+    windHinted = true;
   }
 }
 const hintsShown = new Set();
@@ -151,7 +179,10 @@ on('land', ({ platform }) => {
   }, { cell: 0.65, color: hint.color, hold: 3.2 });
 });
 
+const audio = createAudio();
+
 initInput(renderer.domElement, (locked) => {
+  audio.setLocked(locked);
   if (locked) {
     hud.hideStart();
     // the spawn starts already grounded (no landing event), so LEVEL 1
@@ -185,6 +216,7 @@ function restartRun() {
   restoreUnstable(unstables);
   sun.reset();
   sunRays.reset();
+  eclipse.reset();
   levelShown = 0;
   hintsShown.clear();
   saidQuips.clear();
@@ -195,6 +227,7 @@ function restartRun() {
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') restartRun();
+  if (e.code === 'KeyM') audio.toggleMute();
 });
 
 function update(dt) {
@@ -235,6 +268,7 @@ function render(delta, alpha) {
   followPlayer(p);
   skyDome.follow(camera.position);
   sun.update(delta, camera, player, input.locked);
+  eclipse.update(delta, input.locked && !player.won);
   sunRays.update(delta, input.locked);
   if (sun.stares() >= 2) {
     quipAtPlayer('eyes', 'EYES HURT WHEN YOU\nLOOK AT THE SUN');
@@ -242,12 +276,23 @@ function render(delta, alpha) {
   syncMoverMeshes(movers, alpha);
   syncCrumbleMeshes(crumblers, levelTime);
   cloudScape.update(levelTime);
+  windStreaks.update(delta);
   sea.update(levelTime, delta, player.pos, player.activeCheckpoint.max.y);
+  rain.update(delta, camera.position, sea.storm());
   shockwaves.update(delta);
   platformPulse.update(delta);
+  bouncePads.update(delta);
   syncUnstableMeshes(unstables, levelTime); // after the pulse so the wobble glow wins
   levelText.update(delta, camera.position);
   hud.update(player.feetY(), levelShown, runTime);
+
+  audio.update(delta, {
+    speed: Math.hypot(player.vel.x, player.vel.y, player.vel.z),
+    velY: player.vel.y,
+    inCloud: player.inCloud,
+    seaProx: player.feetY() - sea.seaLevel(),
+    storm: sea.storm(),
+  });
 
   const sprinting = input.sprint && Math.hypot(player.vel.x, player.vel.z) > 8;
   // wind rush ramps with fall speed (starts at 25 m/s, maxes at terminal 130)
@@ -257,13 +302,13 @@ function render(delta, alpha) {
 }
 
 const debugPanel = createDebugPanel({
-  player, sun, sunRays, checkpoints, platforms, crumblers, unstables, hud,
+  player, sun, sunRays, eclipse, checkpoints, platforms, crumblers, unstables, hud, audio,
   getLevel: () => levelShown,
   setLevel: (n) => { levelShown = n; },
   restartRun,
 });
 
-window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, sun, sunRays, sea, TUNING }; // debug/testing handle
+window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, winds, sun, sunRays, sea, audio, eclipse, rain, TUNING }; // debug/testing handle
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;

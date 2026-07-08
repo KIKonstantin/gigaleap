@@ -63,6 +63,10 @@ export function createPostFX(renderer, scene, camera) {
     u.uThump.value = 0.9; // the blast
     fovKick -= 10;
   });
+  on('bounce', () => {
+    u.uPulse.value = 1.0;
+    fovKick += 14; // the launch
+  });
   let swallowTarget = 0;
   on('eaten', () => { swallowTarget = 1; }); // the maw closes over the screen
   on('respawn', () => { swallowTarget = 0; });

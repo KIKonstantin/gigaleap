@@ -7,7 +7,7 @@ import { restoreCrumble } from '../level/crumble.js';
 import { restoreUnstable } from '../level/unstable.js';
 
 export function createDebugPanel({
-  player, sun, sunRays, checkpoints, platforms, crumblers, unstables, hud,
+  player, sun, sunRays, eclipse, checkpoints, platforms, crumblers, unstables, hud, audio,
   getLevel, setLevel, restartRun,
 }) {
   const gui = new GUI({ title: 'GIGALEAP DEBUG' });
@@ -79,6 +79,7 @@ export function createDebugPanel({
   fPhys.add(TUNING, 'TERMINAL_VELOCITY', 50, 300, 5).name('terminal velocity');
   fPhys.add(TUNING, 'CLOUD_DRAG', 0, 5, 0.1).name('cloud drag');
   fPhys.add(TUNING, 'CLOUD_AIR_ACCEL', 0, 60, 1).name('cloud air accel');
+  fPhys.add(TUNING, 'BOUNCE_VY', 60, 160, 1).name('bounce launch');
   fPhys.add({ reset: () => {
     Object.assign(TUNING, TUNING_DEFAULTS);
     gui.controllersRecursive().forEach((c) => c.updateDisplay());
@@ -93,6 +94,13 @@ export function createDebugPanel({
   fSun.add({ fire: () => sunRays.forceFire() }, 'fire').name('fire ray now');
   fSun.add(sunState, 'eat').name('eating allowed').onChange((v) => sun.setEatEnabled(v));
   fSun.add({ visit: () => sun.forceVisit() }, 'visit').name('force visit');
+  fSun.add({ eclipse: () => eclipse.force() }, 'eclipse').name('force eclipse');
+
+  // --- Audio ----------------------------------------------------------------
+  const fAudio = gui.addFolder('Audio');
+  const audioState = { muted: false, volume: 0.8 };
+  fAudio.add(audioState, 'muted').name('mute (M)').onChange((v) => audio.setMuted(v));
+  fAudio.add(audioState, 'volume', 0, 1, 0.05).name('volume').onChange((v) => audio.setVolume(v));
 
   function update() {
     if (!shown) return;

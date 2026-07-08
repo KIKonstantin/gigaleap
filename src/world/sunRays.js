@@ -63,7 +63,7 @@ function beamMaterial(color, opacity) {
   });
 }
 
-export function createSunRays(scene, { sun, player, getLevel }) {
+export function createSunRays(scene, { sun, player, getLevel, isEclipsed = () => false }) {
   // aim line (thin, telegraph), beam (fat, fire), core (thin white, fire),
   // impact flash (sphere at the hit point)
   const aim = new THREE.Mesh(
@@ -122,12 +122,15 @@ export function createSunRays(scene, { sun, player, getLevel }) {
   }
 
   function toIdle() {
+    const wasActive = state !== 'idle';
     state = 'idle';
     timer = 0;
     forced = false;
     cooldown = rollCooldown();
     aim.visible = beam.visible = core.visible = ring.visible = false;
     sun.setAngry(0);
+    // audio needs an abort signal to kill the charge tone
+    if (wasActive) emit('sunray', { phase: 'idle' });
   }
 
   function startCharge(preLocked) {
@@ -170,7 +173,7 @@ export function createSunRays(scene, { sun, player, getLevel }) {
   function update(dt, locked) {
     const canAttack = forced
       ? !sun.isEating()
-      : enabled && locked && !player.won &&
+      : enabled && locked && !player.won && !isEclipsed() &&
         getLevel() >= ACTIVE_LEVEL && !sun.isVisiting() && !sun.isEating();
 
     // impact flash animates independently of the attack cycle

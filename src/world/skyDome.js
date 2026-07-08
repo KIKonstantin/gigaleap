@@ -37,5 +37,9 @@ export function createSkyDome(scene, url = '/sky.png') {
     follow(pos) {
       if (mesh) mesh.position.copy(pos);
     },
+    // the painted sky is unlit — the eclipse must tint it down explicitly
+    setDaylight(f) {
+      if (mesh) mesh.material.color.setScalar(0.12 + 0.88 * f);
+    },
   };
 }

@@ -51,6 +51,7 @@ const GOAL_COLOR = 0xffd166;
 const BRIDGE_COLOR = 0xe89c94; // warm coral — reads as "danger" in the palette
 const DASH_COLOR = 0x9d8df1; // periwinkle — the "you need the dash" signal
 const UNSTABLE_COLOR = 0xb8a398; // brittle grey-brown — it will not hold you long
+const BOUNCE_COLOR = 0xb5e48c; // springy lime — step on it and fly
 
 const SEG = 9; // bridge segments are square, flat, and axis-aligned
 const CRACK = 0.3; // narrower than the player (0.7) — can't fall in or snag
@@ -64,13 +65,25 @@ function jumpRange(rise) {
   return SPRINT_SPEED * (tUp + tDown);
 }
 
+// Same, launched from a bounce pad (auto vel.y 119 -> apex ~202 m). Minus
+// 12 m: a dead-drop bounce starts at zero horizontal speed and needs
+// ~10 m of air accel to reach full sprint speed.
+const BOUNCE_VY = 119;
+const BOUNCE_APEX = (BOUNCE_VY * BOUNCE_VY) / (2 * GRAVITY_UP); // ~202.3 m
+function bounceRange(rise) {
+  if (rise >= BOUNCE_APEX) return 0;
+  const tUp = BOUNCE_VY / GRAVITY_UP;
+  const tDown = Math.sqrt((2 * (BOUNCE_APEX - rise)) / GRAVITY_DOWN);
+  return SPRINT_SPEED * (tUp + tDown) - 12;
+}
+
 function lcg(seed) {
   let s = seed >>> 0;
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
 function buildLevel() {
-  const rand = lcg(20260707);
+  const rand = lcg(20260712);
   const platforms = [
     { pos: [0, -1.5, 0], size: [30, 3, 30], color: PALETTE[0], checkpoint: true },
   ];
@@ -85,9 +98,13 @@ function buildLevel() {
   let dashSlot = 0;
   let unstableSlot = 0;
   let cloudSlot = 0;
+  let bounceSlot = 0;
+  let windSlot = 0;
   const clouds = []; // gameplay drag-cloud ellipsoids, one per cloud hop
+  const windZones = []; // gust boxes spanning chosen hops (see wind.js)
   let prevAmp = 0, prevVertAmp = 0;
   let prevNoDash = false; // no dash aim from a crumbling exit or unstable ground
+  let prevBounce = false; // the node after a pad is the LAUNCH hop — forced plain
 
   for (let i = 1; i <= CLIMB_COUNT + 1; i++) {
     const isGoal = i === CLIMB_COUNT + 1;
@@ -145,8 +162,11 @@ function buildLevel() {
 
     const eligible = !isGoal && !isCheckpoint && easySteps <= 0 && i > 4;
 
+    const afterBounce = prevBounce;
+    prevBounce = false;
+
     // ---- crumbling sprint-bridge node ----
-    if (eligible && ++bridgeSlot % 6 === 3) {
+    if (eligible && !afterBounce && ++bridgeSlot % 6 === 3) {
       // snap to the nearest compass axis: segments are axis-aligned boxes
       heading = Math.round(heading / (Math.PI / 2)) * (Math.PI / 2);
       const ux = Math.round(Math.sin(heading));
@@ -180,24 +200,39 @@ function buildLevel() {
       continue;
     }
 
+    // bounce pads: land on one and it launches you to ~202 m — the NEXT hop
+    // is the payoff, a rise far beyond jump range. Never feeds a checkpoint.
+    const isBounce = eligible && !afterBounce && i > 8
+      && i < CLIMB_COUNT - RING_COUNT // the launch hop must be a wander node
+      && (i + 1) % CHECKPOINT_EVERY !== 0
+      && prevAmp === 0 && prevVertAmp === 0 && !prevNoDash
+      && ++bounceSlot % 5 === 2;
     // cloud hops: a giant drag-cloud blocks the middle of the flight path —
     // air control dies inside it, only a dash punches through (clouds.js).
     // Same clean-takeoff guards as dash gaps; from level 3 up.
-    const isCloud = eligible && i > 16 && prevAmp === 0 && prevVertAmp === 0
+    const isCloud = eligible && !isBounce && !afterBounce && i > 16
+      && prevAmp === 0 && prevVertAmp === 0
       && !prevNoDash && ++cloudSlot % 2 === 1;
     // dash-only gaps: placed just BEYOND max jump range, reachable only with
     // the Ctrl air-dash. Never after a mover (its sway would stack on top)
     // and never off crumbling/unstable ground (no time to line up the aim).
-    const isDash = eligible && !isCloud && prevAmp === 0 && prevVertAmp === 0
+    const isDash = eligible && !isBounce && !afterBounce && !isCloud
+      && prevAmp === 0 && prevVertAmp === 0
       && !prevNoDash && ++dashSlot % 4 === 2;
     // roughly every 3rd eligible platform moves; every 3rd mover is vertical
-    const isMover = eligible && !isCloud && !isDash && ++moverSlot % 3 === 0;
+    const isMover = eligible && !isBounce && !afterBounce && !isCloud && !isDash
+      && ++moverSlot % 3 === 0;
     const isVertical = isMover && moverSlot % 9 === 0;
     const amp = isMover && !isVertical ? 25 + rand() * 20 : 0;
     const vertAmp = isVertical ? 15 + rand() * 10 : 0;
+    // wind hops: plain gaps at level 5+ with a sideways gust to fight
+    const isWind = eligible && !isBounce && !afterBounce && !isCloud && !isDash
+      && !isMover && i > 32
+      && prevAmp === 0 && prevVertAmp === 0 && !prevNoDash
+      && ++windSlot >= 1; // every clean candidate — guards keep them rare
     // brittle nodes: stand longer than 2 s and they let go (see unstable.js)
-    const isUnstable = eligible && !isCloud && !isDash && !isMover
-      && ++unstableSlot % 3 === 1;
+    const isUnstable = eligible && !isBounce && !afterBounce && !isCloud
+      && !isDash && !isMover && !isWind && ++unstableSlot % 3 === 1;
 
     // mixed rises: mostly climbs, some near-flats, occasional slight descents
     const roll = rand();
@@ -211,7 +246,16 @@ function buildLevel() {
       gap = Math.min(gap, 90);
       easySteps--;
     }
-    if (isDash) {
+    if (isBounce) {
+      // the pad itself must be a confident, easy landing
+      rise = 4 + rand() * 10;
+      gap = Math.min(80 + rand() * 20, jumpRange(rise) - 60);
+    } else if (afterBounce) {
+      // the LAUNCH hop: a rise no ordinary jump reaches (jumpRange hits 0 at
+      // rise 110.6) — this is what the pad buys you
+      rise = 70 + rand() * 60;
+      gap = Math.min(105 + rand() * 25, bounceRange(rise) - 45);
+    } else if (isDash) {
       rise = 4 + rand() * 8; // dashes are horizontal — keep the rise gentle
       gap = jumpRange(rise) + 14 + rand() * 8; // beyond jump range, within dash range
     } else if (isCloud) {
@@ -221,12 +265,14 @@ function buildLevel() {
       gap = 92 + rand() * 10;
     } else {
       // hard reachability clamp at the movers' worst positions, with a safety
-      // margin that shrinks as skill grows
-      const margin = 50 - 20 * p + amp + prevAmp;
+      // margin that shrinks as skill grows (wind hops get extra slack — the
+      // gust eats a few meters even when counter-steered)
+      const margin = 50 - 20 * p + amp + prevAmp + (isWind ? 25 : 0);
       gap = Math.min(gap, jumpRange(rise + vertAmp + prevVertAmp) - margin);
     }
 
     const width = isGoal ? 15 : isCheckpoint ? 16
+      : isBounce ? 16 : afterBounce ? 15 : isWind ? 16
       : (isDash || isCloud ? 16 : isUnstable ? 12 : 14) - 5.5 * p + (rand() - 0.5) * 2;
     const half = width / 2;
     const thickness = isGoal ? 3 : 2.5 + rand() * 0.8;
@@ -244,7 +290,23 @@ function buildLevel() {
       });
     }
 
+    if (isWind) {
+      // gust box spans the flight corridor, in a band above the takeoff so
+      // ground running is unaffected; blows perpendicular to the hop
+      const sign = rand() < 0.5 ? 1 : -1;
+      windZones.push({
+        min: [round2(Math.min(srcX, x) - 22), round2(srcY + 15), round2(Math.min(srcZ, z) - 22)],
+        max: [round2(Math.max(srcX, x) + 22), round2(srcY + 75), round2(Math.max(srcZ, z) + 22)],
+        dir: [round2(Math.cos(heading) * sign), 0, round2(-Math.sin(heading) * sign)],
+        // strong enough to beat the air-clamp's stabilizing rotation: holding
+        // plain forward still drifts ~35*22/60 ≈ 13 m/s — aim upwind or miss
+        strength: 22,
+        idx: platforms.length, // the destination platform's index (pushed below)
+      });
+    }
+
     const color = isGoal ? GOAL_COLOR : isCheckpoint ? CHECKPOINT_COLOR
+      : isBounce ? BOUNCE_COLOR
       : isDash ? DASH_COLOR : isUnstable ? UNSTABLE_COLOR
       : PALETTE[Math.floor(Math.max(y, 0) / 150) % PALETTE.length];
 
@@ -255,6 +317,7 @@ function buildLevel() {
     };
     if (isCheckpoint) def.checkpoint = true;
     if (isGoal) def.goal = true;
+    if (isBounce) def.bounce = true;
     if (isDash) def.dash = true;
     if (isCloud) def.cloud = true;
     if (isUnstable) def.unstable = true;
@@ -277,6 +340,7 @@ function buildLevel() {
     prevAmp = amp;
     prevVertAmp = vertAmp;
     prevNoDash = isUnstable;
+    prevBounce = isBounce;
   }
 
   // decorative clouds: scattered around the tower, never near the paths
@@ -301,7 +365,7 @@ function buildLevel() {
 
   // the sun's world anchor: the center of the orbit, mid-climb height
   const sunAnchor = [round2(ring.cx), round2(ring.startY + 85), round2(ring.cz)];
-  return { platforms, sunAnchor, clouds, deco };
+  return { platforms, sunAnchor, clouds, deco, windZones };
 }
 
 function round2(v) {
@@ -313,5 +377,6 @@ export const PLATFORMS = built.platforms;
 export const SUN_ANCHOR = built.sunAnchor;
 export const CLOUDS = built.clouds; // gameplay drag clouds
 export const CLOUD_DECO = built.deco; // visual-only scenery
+export const WIND_ZONES = built.windZones; // gust boxes (see level/wind.js)
 const goalDef = PLATFORMS[PLATFORMS.length - 1];
 export const GOAL_TOP = goalDef.pos[1] + goalDef.size[1] / 2;
