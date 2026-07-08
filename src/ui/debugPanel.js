@@ -4,9 +4,10 @@
 import GUI from 'lil-gui';
 import { TUNING, TUNING_DEFAULTS } from '../player/controller.js';
 import { restoreCrumble } from '../level/crumble.js';
+import { restoreUnstable } from '../level/unstable.js';
 
 export function createDebugPanel({
-  player, sun, sunRays, checkpoints, platforms, crumblers, hud,
+  player, sun, sunRays, checkpoints, platforms, crumblers, unstables, hud,
   getLevel, setLevel, restartRun,
 }) {
   const gui = new GUI({ title: 'GIGALEAP DEBUG' });
@@ -48,6 +49,7 @@ export function createDebugPanel({
     player.activeCheckpoint = v === 'goal' ? checkpoints[checkpoints.length - 1] : p;
     player.placeAt(p);
     restoreCrumble(crumblers);
+    restoreUnstable(unstables);
     setLevel(v === 'goal' ? checkpoints.length : v + 1);
     hud.hideWin();
   });

@@ -25,17 +25,32 @@ const APEX = (JUMP_SPEED * JUMP_SPEED) / (2 * GRAVITY_UP); // ~110.6 m
 
 const CLIMB_COUNT = 40;
 const CHECKPOINT_EVERY = 8;
-// the finale: the last nodes leave the random wander and orbit the SUN —
-// a ring of platforms around its world position, goal at the end
+// the finale: the last nodes leave the random wander and orbit the SUN.
+// The orbit is the GAUNTLET — the hardest stretch of the game: unstable
+// platforms that drop if you camp on them, dash-only hops between them, and
+// one final dash onto the gold. Plan is hand-tuned; angles/radii chosen so
+// wrap-around nodes never stack within head-bonk range (verified by the
+// level validator).
 const RING_COUNT = 9;
 const RING_R = 130;
-const RING_STEP = Math.PI / 4; // 45 deg per hop -> chord ~99.5 m
+const RING_PLAN = [
+  { step: 45, dr: 0, rise: 18, kind: 'plain' }, // entry breather
+  { step: 45, dr: 0, rise: 16, kind: 'unstable' },
+  { step: 80, dr: 0, rise: 6, kind: 'dash' },
+  { step: 45, dr: 0, rise: 18, kind: 'unstable' },
+  { step: 80, dr: 0, rise: 6, kind: 'dash' },
+  { step: 45, dr: 0, rise: 18, kind: 'unstable' },
+  { step: 80, dr: 0, rise: 6, kind: 'dash' },
+  { step: 45, dr: 25, rise: 18, kind: 'plain' }, // LEVEL 6 checkpoint
+  { step: 64, dr: 20, rise: 4, kind: 'dash' }, // the goal: one last dash
+];
 
 const PALETTE = [0x8ecae6, 0xa8dadc, 0xcdb4db, 0xffc8dd, 0xbde0fe, 0xffd6a5];
 const CHECKPOINT_COLOR = 0x95d5b2;
 const GOAL_COLOR = 0xffd166;
 const BRIDGE_COLOR = 0xe89c94; // warm coral — reads as "danger" in the palette
 const DASH_COLOR = 0x9d8df1; // periwinkle — the "you need the dash" signal
+const UNSTABLE_COLOR = 0xb8a398; // brittle grey-brown — it will not hold you long
 
 const SEG = 9; // bridge segments are square, flat, and axis-aligned
 const CRACK = 0.3; // narrower than the player (0.7) — can't fall in or snag
@@ -68,14 +83,16 @@ function buildLevel() {
   let moverSlot = 0;
   let bridgeSlot = 0;
   let dashSlot = 0;
+  let unstableSlot = 0;
   let prevAmp = 0, prevVertAmp = 0;
+  let prevNoDash = false; // no dash aim from a crumbling exit or unstable ground
 
   for (let i = 1; i <= CLIMB_COUNT + 1; i++) {
     const isGoal = i === CLIMB_COUNT + 1;
     const isCheckpoint = !isGoal && i % CHECKPOINT_EVERY === 0;
     const p = Math.min(i / CLIMB_COUNT, 1); // difficulty progress 0..1
 
-    // ---- the sun orbit: final nodes circle the sun's world anchor ----
+    // ---- the sun orbit gauntlet: final nodes circle the sun's anchor ----
     if (i > CLIMB_COUNT + 1 - RING_COUNT) {
       if (!ring) {
         // center perpendicular-left of the heading, so the previous
@@ -85,17 +102,22 @@ function buildLevel() {
         const theta = Math.atan2(z - cz, x - cx);
         // rotate whichever way continues the current direction of travel
         const dir = (-Math.sin(theta) * Math.sin(heading) + Math.cos(theta) * Math.cos(heading)) > 0 ? 1 : -1;
-        ring = { cx, cz, theta, dir, startY: y };
+        ring = { cx, cz, theta, dir, r: RING_R, startY: y, idx: 0 };
       }
-      ring.theta += RING_STEP * ring.dir;
-      const rise = 16 + rand() * 6; // min total climb clears the ring's own start
-      y += rise;
-      x = ring.cx + Math.cos(ring.theta) * RING_R;
-      z = ring.cz + Math.sin(ring.theta) * RING_R;
+      const node = RING_PLAN[ring.idx++];
+      ring.theta += (node.step * Math.PI / 180) * ring.dir;
+      ring.r += node.dr;
+      y += node.rise + rand() * 2;
+      x = ring.cx + Math.cos(ring.theta) * ring.r;
+      z = ring.cz + Math.sin(ring.theta) * ring.r;
 
-      const width = isGoal ? 15 : isCheckpoint ? 16 : 9 + rand() * 1.5;
+      const isDash = node.kind === 'dash' && !isCheckpoint;
+      const isUnstable = node.kind === 'unstable' && !isCheckpoint && !isGoal;
+      const width = isGoal ? 15 : isCheckpoint ? 16
+        : isDash ? 9 : isUnstable ? 8.5 : 9.5 + rand();
       const thickness = isGoal ? 3 : 2.5 + rand() * 0.8;
       const color = isGoal ? GOAL_COLOR : isCheckpoint ? CHECKPOINT_COLOR
+        : isDash ? DASH_COLOR : isUnstable ? UNSTABLE_COLOR
         : PALETTE[Math.floor(Math.max(y, 0) / 150) % PALETTE.length];
       const def = {
         pos: [round2(x), round2(y - thickness / 2), round2(z)],
@@ -103,7 +125,12 @@ function buildLevel() {
         color,
       };
       if (isCheckpoint) def.checkpoint = true;
-      if (isGoal) def.goal = true;
+      if (isGoal) {
+        def.goal = true;
+        def.dash = true; // the last leap is dash-only
+      }
+      if (isDash && !isGoal) def.dash = true;
+      if (isUnstable) def.unstable = true;
       platforms.push(def);
       prevHalf = width / 2;
       prevAmp = 0;
@@ -117,7 +144,7 @@ function buildLevel() {
     const eligible = !isGoal && !isCheckpoint && easySteps <= 0 && i > 4;
 
     // ---- crumbling sprint-bridge node ----
-    if (eligible && ++bridgeSlot % 8 === 4) {
+    if (eligible && ++bridgeSlot % 6 === 3) {
       // snap to the nearest compass axis: segments are axis-aligned boxes
       heading = Math.round(heading / (Math.PI / 2)) * (Math.PI / 2);
       const ux = Math.round(Math.sin(heading));
@@ -147,18 +174,22 @@ function buildLevel() {
       prevHalf = SEG / 2;
       prevAmp = 0;
       prevVertAmp = 0;
+      prevNoDash = true; // the exit segment is crumbling under you — no dash aim
       continue;
     }
 
     // dash-only gaps: placed just BEYOND max jump range, reachable only with
-    // the Ctrl air-dash. Never after a mover (its sway would stack on top).
+    // the Ctrl air-dash. Never after a mover (its sway would stack on top)
+    // and never off crumbling/unstable ground (no time to line up the aim).
     const isDash = eligible && prevAmp === 0 && prevVertAmp === 0
-      && ++dashSlot % 5 === 2;
+      && !prevNoDash && ++dashSlot % 4 === 2;
     // roughly every 3rd eligible platform moves; every 3rd mover is vertical
     const isMover = eligible && !isDash && ++moverSlot % 3 === 0;
     const isVertical = isMover && moverSlot % 9 === 0;
     const amp = isMover && !isVertical ? 25 + rand() * 20 : 0;
     const vertAmp = isVertical ? 15 + rand() * 10 : 0;
+    // brittle nodes: stand longer than 2 s and they let go (see unstable.js)
+    const isUnstable = eligible && !isDash && !isMover && ++unstableSlot % 3 === 1;
 
     // mixed rises: mostly climbs, some near-flats, occasional slight descents
     const roll = rand();
@@ -183,7 +214,7 @@ function buildLevel() {
     }
 
     const width = isGoal ? 15 : isCheckpoint ? 16
-      : (isDash ? 16 : 14) - 5.5 * p + (rand() - 0.5) * 2;
+      : (isDash ? 16 : isUnstable ? 12 : 14) - 5.5 * p + (rand() - 0.5) * 2;
     const half = width / 2;
     const thickness = isGoal ? 3 : 2.5 + rand() * 0.8;
 
@@ -193,7 +224,7 @@ function buildLevel() {
     y += rise;
 
     const color = isGoal ? GOAL_COLOR : isCheckpoint ? CHECKPOINT_COLOR
-      : isDash ? DASH_COLOR
+      : isDash ? DASH_COLOR : isUnstable ? UNSTABLE_COLOR
       : PALETTE[Math.floor(Math.max(y, 0) / 150) % PALETTE.length];
 
     const def = {
@@ -204,6 +235,7 @@ function buildLevel() {
     if (isCheckpoint) def.checkpoint = true;
     if (isGoal) def.goal = true;
     if (isDash) def.dash = true;
+    if (isUnstable) def.unstable = true;
     if (isMover) {
       // horizontal movers sway perpendicular to the approach direction
       const dir = isVertical
@@ -222,6 +254,7 @@ function buildLevel() {
     prevHalf = half;
     prevAmp = amp;
     prevVertAmp = vertAmp;
+    prevNoDash = isUnstable;
   }
 
   // the sun's world anchor: the center of the orbit, mid-climb height

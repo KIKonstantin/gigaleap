@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { PLATFORMS } from './levelData.js';
 import { initMovers } from './movers.js';
 import { initCrumble } from './crumble.js';
+import { initUnstable } from './unstable.js';
 
 export function buildLevel(scene) {
   const colliders = [];
@@ -17,14 +18,16 @@ export function buildLevel(scene) {
 
     // movers glow faintly so they read as "alive"; crumbling bridge segments
     // glow warm so the danger lane is legible through the fog; dash targets
-    // glow periwinkle so the "you need the dash" cue carries across the gap
+    // glow periwinkle so the "you need the dash" cue carries across the gap;
+    // unstable platforms glow DANGER RED as their stand-timer climbs
     const baseEmissive = def.goal ? 1.4 : def.checkpoint ? 0.55
-      : def.move ? 0.18 : def.crumble ? 0.14 : def.dash ? 0.3 : 0;
+      : def.move ? 0.18 : def.crumble ? 0.14 : def.dash ? 0.3
+      : def.unstable ? 0.1 : 0;
     const material = new THREE.MeshStandardMaterial({
       color: def.color,
       roughness: 0.85,
       metalness: 0,
-      emissive: def.color,
+      emissive: def.unstable ? 0xff5533 : def.color,
       emissiveIntensity: baseEmissive,
     });
 
@@ -48,7 +51,8 @@ export function buildLevel(scene) {
 
   const movers = initMovers(colliders);
   const crumblers = initCrumble(colliders);
-  return { colliders, movers, crumblers };
+  const unstables = initUnstable(colliders);
+  return { colliders, movers, crumblers, unstables };
 }
 
 // meshes follow the physics AABBs, interpolated for high-refresh displays

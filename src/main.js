@@ -9,6 +9,7 @@ import { createSkyDome } from './world/skyDome.js';
 import { buildLevel, syncMoverMeshes } from './level/level.js';
 import { stepMovers } from './level/movers.js';
 import { stepCrumble, restoreCrumble, syncCrumbleMeshes } from './level/crumble.js';
+import { stepUnstable, restoreUnstable, syncUnstableMeshes } from './level/unstable.js';
 import { createController, TUNING } from './player/controller.js';
 import { createPostFX } from './fx/postfx.js';
 import { createShockwaves } from './fx/shockwave.js';
@@ -33,7 +34,7 @@ camera.rotation.order = 'YXZ';
 
 const sun = createSun(scene);
 const skyDome = createSkyDome(scene);
-const { colliders: platforms, movers, crumblers } = buildLevel(scene);
+const { colliders: platforms, movers, crumblers, unstables } = buildLevel(scene);
 const player = createController(platforms);
 
 // spawn facing the first platform
@@ -55,6 +56,25 @@ let levelShown = 0;
 
 const sunRays = createSunRays(scene, { sun, player, getLevel: () => levelShown });
 
+// one-shot flavor texts; each fires once per run
+const LEVEL_QUIPS = {
+  2: 'IT WATCHES',
+  4: 'DID YOU BRING\nSUNCREAM?',
+  5: 'NO MORE\nMR NICE SUN',
+  6: 'ONE MORE DASH',
+};
+const saidQuips = new Set();
+
+function quipAtPlayer(key, text, opts = {}) {
+  if (saidQuips.has(key)) return;
+  saidQuips.add(key);
+  levelText.show(text, {
+    x: player.pos.x - Math.sin(input.yaw) * 26,
+    y: player.pos.y + 5,
+    z: player.pos.z - Math.cos(input.yaw) * 26,
+  }, { cell: 0.55, color: 0xc47b3d, hold: 3.4, ...opts });
+}
+
 function showLevelAt(platform, level) {
   levelShown = level;
   // float the letters along the path toward the next platform
@@ -69,6 +89,15 @@ function showLevelAt(platform, level) {
     y: platform.max.y + 14,
     z: cz + (nz / len) * 30,
   });
+  const quipText = LEVEL_QUIPS[level];
+  if (quipText && !saidQuips.has(`level${level}`)) {
+    saidQuips.add(`level${level}`);
+    levelText.show(quipText, {
+      x: cx + (nx / len) * 30,
+      y: platform.max.y + 7,
+      z: cz + (nz / len) * 30,
+    }, { cell: 0.55, color: 0xc47b3d, hold: 3.8 });
+  }
 }
 
 on('land', ({ platform }) => {
@@ -80,12 +109,17 @@ on('land', ({ platform }) => {
 // over the gap ahead — "SPRINT" before a crumbling bridge, "DASH" before a
 // dash-only gap. Color-coded to the platforms they teach.
 const hints = new Map();
+let unstableHinted = false;
 for (let i = 1; i < platforms.length; i++) {
   const cur = platforms[i], prev = platforms[i - 1];
   if (cur.def.crumble && !prev.def.crumble) {
     hints.set(prev, { text: 'SPRINT', color: 0xd9756b, target: cur });
   } else if (cur.def.dash) {
     hints.set(prev, { text: 'DASH', color: 0x7a68e8, target: cur });
+  } else if (cur.def.unstable && !unstableHinted && !hints.has(prev)) {
+    // only the first one gets a warning — after that the wobble teaches you
+    hints.set(prev, { text: 'NO CAMPING', color: 0xc96f5a, target: cur });
+    unstableHinted = true;
   }
 }
 const hintsShown = new Set();
@@ -126,15 +160,21 @@ on('win', ({ height }) => {
   hud.showWin(height, runTime);
   document.exitPointerLock();
 });
-on('respawn', () => restoreCrumble(crumblers));
+on('respawn', () => {
+  restoreCrumble(crumblers);
+  restoreUnstable(unstables);
+});
+on('rayhit', () => quipAtPlayer('spf', 'SPF 5000'));
 
 function restartRun() {
   player.reset();
   restoreCrumble(crumblers);
+  restoreUnstable(unstables);
   sun.reset();
   sunRays.reset();
   levelShown = 0;
   hintsShown.clear();
+  saidQuips.clear();
   runTime = 0;
   hud.hideWin();
   if (!input.locked) hud.showStart();
@@ -150,9 +190,13 @@ function update(dt) {
   stepMovers(movers, levelTime);
   player.step(dt, input);
   stepCrumble(crumblers, dt, player.groundPlatform);
+  stepUnstable(unstables, dt, player.groundPlatform);
   if (eatenTimer > 0) {
     eatenTimer -= dt;
-    if (eatenTimer <= 0) player.devour();
+    if (eatenTimer <= 0) {
+      player.devour();
+      quipAtPlayer('nom', 'OM NOM NOM');
+    }
   }
   runTime += dt;
 }
@@ -173,10 +217,14 @@ function render(delta, alpha) {
   sun.update(delta, camera, player, input.locked);
   sunRays.update(delta, input.locked);
   hud.setStares(sun.stares());
+  if (sun.stares() >= 2) {
+    quipAtPlayer('eyes', 'EYES HURT WHEN YOU\nLOOK AT THE SUN');
+  }
   syncMoverMeshes(movers, alpha);
   syncCrumbleMeshes(crumblers, levelTime);
   shockwaves.update(delta);
   platformPulse.update(delta);
+  syncUnstableMeshes(unstables, levelTime); // after the pulse so the wobble glow wins
   levelText.update(delta, camera.position);
   hud.update(player.feetY());
 
@@ -188,13 +236,13 @@ function render(delta, alpha) {
 }
 
 const debugPanel = createDebugPanel({
-  player, sun, sunRays, checkpoints, platforms, crumblers, hud,
+  player, sun, sunRays, checkpoints, platforms, crumblers, unstables, hud,
   getLevel: () => levelShown,
   setLevel: (n) => { levelShown = n; },
   restartRun,
 });
 
-window.__ascent = { player, input, on, movers, platforms, crumblers, sun, sunRays, TUNING }; // debug/testing handle
+window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, sun, sunRays, TUNING }; // debug/testing handle
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
