@@ -204,6 +204,13 @@ function update(dt) {
   player.step(dt, input);
   stepCrumble(crumblers, dt, player.groundPlatform);
   stepUnstable(unstables, dt, player.groundPlatform);
+  // splashing into the sea is a respawn — the maw handles high falls (it
+  // swallows you just above the waterline), the water itself handles low ones
+  if (!player.grounded && !player.flying && !player.invincible && eatenTimer <= 0
+    && player.feetY() < sea.seaLevel() + 1) {
+    player.devour();
+    quipAtPlayer('swim', 'NO SWIMMING');
+  }
   if (eatenTimer > 0) {
     eatenTimer -= dt;
     if (eatenTimer <= 0) {

@@ -11,7 +11,9 @@ import * as THREE from 'three';
 
 const SIZE = 3200;
 const SEGS = 80;
-const BASE_Y = -70;
+// The run STARTS at sea level: the pad (top y=0, underside -3) floats in the
+// water, calm crests (~5 m) lapping just below its top edge.
+const BASE_Y = -6;
 // Never sink more than this below the CHECKPOINT you're climbing from: past
 // the fog the real bottom is invisible anyway, so from the heights the sea
 // rides along underneath — close enough that a dark storm looms through the
@@ -48,6 +50,7 @@ export function createSea(scene, { getLevel }) {
     flatShading: true,
     roughness: 0.75,
     metalness: 0,
+    side: THREE.DoubleSide, // brief underwater frames read as a water ceiling
   });
   // cap the fog's bite on the sea so the water never fully vanishes into the
   // haze. The cap rides the storm: calm water melts into the fog like
@@ -87,7 +90,13 @@ export function createSea(scene, { getLevel }) {
     mesh.position.x = playerPos.x;
     mesh.position.z = playerPos.z;
     const targetY = Math.max(BASE_Y, checkpointTop - FOLLOW);
-    mesh.position.y += (targetY - mesh.position.y) * (1 - Math.exp(-0.4 * dt));
+    if (targetY < mesh.position.y - 60) {
+      // restart / teleport far down: snap, or the start pad would sit
+      // underwater while the elevated sea glides back
+      mesh.position.y = targetY;
+    } else {
+      mesh.position.y += (targetY - mesh.position.y) * (1 - Math.exp(-0.4 * dt));
+    }
 
     // the weather changes like weather — slowly
     const target = Math.min(Math.max((getLevel() - STORM_FROM_LEVEL) / 3, 0), 1);
