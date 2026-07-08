@@ -7,6 +7,7 @@ import { createSun } from './world/sun.js';
 import { createSunRays } from './world/sunRays.js';
 import { createSkyDome } from './world/skyDome.js';
 import { createClouds } from './world/clouds.js';
+import { createSea } from './world/sea.js';
 import { initClouds } from './level/clouds.js';
 import { CLOUDS } from './level/levelData.js';
 import { buildLevel, syncMoverMeshes } from './level/level.js';
@@ -60,6 +61,7 @@ const checkpoints = platforms.filter((p) => p.def.checkpoint);
 let levelShown = 0;
 
 const sunRays = createSunRays(scene, { sun, player, getLevel: () => levelShown });
+const sea = createSea(scene, { getLevel: () => levelShown });
 
 // one-shot flavor texts; each fires once per run
 const LEVEL_QUIPS = {
@@ -233,6 +235,7 @@ function render(delta, alpha) {
   syncMoverMeshes(movers, alpha);
   syncCrumbleMeshes(crumblers, levelTime);
   cloudScape.update(levelTime);
+  sea.update(levelTime, delta, player.pos);
   shockwaves.update(delta);
   platformPulse.update(delta);
   syncUnstableMeshes(unstables, levelTime); // after the pulse so the wobble glow wins
@@ -253,7 +256,7 @@ const debugPanel = createDebugPanel({
   restartRun,
 });
 
-window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, sun, sunRays, TUNING }; // debug/testing handle
+window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, sun, sunRays, sea, TUNING }; // debug/testing handle
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;

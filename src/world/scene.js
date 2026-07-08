@@ -29,21 +29,11 @@ export function createScene() {
   scene.add(sun);
   scene.add(sun.target);
 
-  // fog-colored plane far below so looking straight down never shows raw void
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(10000, 10000),
-    new THREE.MeshBasicMaterial({ color: SKY })
-  );
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -1200;
-  scene.add(floor);
+  // the sea (world/sea.js) covers the void below — no floor plane needed
 
   function followPlayer(pos) {
     sun.position.set(pos.x + 80, pos.y + 120, pos.z + 60);
     sun.target.position.set(pos.x, pos.y, pos.z);
-    // the tower wanders kilometers horizontally — keep the void-cover under us
-    floor.position.x = pos.x;
-    floor.position.z = pos.z;
   }
 
   return { scene, followPlayer };
