@@ -16,6 +16,7 @@ export const JumpFXShader = {
     uDashAir: { value: 0 }, // horizontal streak burst, spikes on dash
     uDashOff: { value: 0 }, // horizontal scroll phase
     uSwallow: { value: 0 }, // 1 = inside the sun. good night.
+    uCloud: { value: 0 }, // white veil while inside a drag cloud
     uAspect: { value: 1 },
   },
 
@@ -37,6 +38,7 @@ export const JumpFXShader = {
     uniform float uDashAir;
     uniform float uDashOff;
     uniform float uSwallow;
+    uniform float uCloud;
     uniform float uAspect;
     varying vec2 vUv;
 
@@ -112,7 +114,10 @@ export const JumpFXShader = {
         col += vec3(1.0) * on * dash2 * thin2 * sideMask * uDashAir * 0.16;
       }
 
-      // swallowed: the world goes dark from the edges inward
+      // inside a cloud: white-out from the edges, center stays readable
+      col = mix(col, vec3(0.94, 0.96, 0.98), uCloud * (0.12 + 0.28 * smoothstep(0.1, 0.8, d)));
+
+      // swallowed: the world goes dark from the edges inward (wins over cloud)
       col = mix(col, vec3(0.03, 0.03, 0.05), uSwallow * (0.55 + 0.45 * smoothstep(0.0, 0.7, d)));
 
       gl_FragColor = vec4(col, 1.0);

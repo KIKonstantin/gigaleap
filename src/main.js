@@ -6,6 +6,9 @@ import { createScene } from './world/scene.js';
 import { createSun } from './world/sun.js';
 import { createSunRays } from './world/sunRays.js';
 import { createSkyDome } from './world/skyDome.js';
+import { createClouds } from './world/clouds.js';
+import { initClouds } from './level/clouds.js';
+import { CLOUDS } from './level/levelData.js';
 import { buildLevel, syncMoverMeshes } from './level/level.js';
 import { stepMovers } from './level/movers.js';
 import { stepCrumble, restoreCrumble, syncCrumbleMeshes } from './level/crumble.js';
@@ -35,7 +38,9 @@ camera.rotation.order = 'YXZ';
 const sun = createSun(scene);
 const skyDome = createSkyDome(scene);
 const { colliders: platforms, movers, crumblers, unstables } = buildLevel(scene);
-const player = createController(platforms);
+const clouds = initClouds(CLOUDS);
+const cloudScape = createClouds(scene);
+const player = createController(platforms, clouds);
 
 // spawn facing the first platform
 const first = platforms[1];
@@ -60,8 +65,9 @@ const sunRays = createSunRays(scene, { sun, player, getLevel: () => levelShown }
 const LEVEL_QUIPS = {
   2: 'IT WATCHES',
   4: 'DID YOU BRING\nSUNCREAM?',
-  5: 'NO MORE\nMR NICE SUN',
-  6: 'ONE MORE DASH',
+  6: 'STILL CLIMBING?',
+  8: 'NO MORE\nMR NICE SUN',
+  9: 'ONE MORE DASH',
 };
 const saidQuips = new Set();
 
@@ -110,12 +116,16 @@ on('land', ({ platform }) => {
 // dash-only gap. Color-coded to the platforms they teach.
 const hints = new Map();
 let unstableHinted = false;
+let cloudHinted = false;
 for (let i = 1; i < platforms.length; i++) {
   const cur = platforms[i], prev = platforms[i - 1];
   if (cur.def.crumble && !prev.def.crumble) {
     hints.set(prev, { text: 'SPRINT', color: 0xd9756b, target: cur });
   } else if (cur.def.dash) {
     hints.set(prev, { text: 'DASH', color: 0x7a68e8, target: cur });
+  } else if (cur.def.cloud && !cloudHinted && !hints.has(prev)) {
+    hints.set(prev, { text: 'DASH THROUGH', color: 0x8fa8b8, target: cur });
+    cloudHinted = true;
   } else if (cur.def.unstable && !unstableHinted && !hints.has(prev)) {
     // only the first one gets a warning — after that the wobble teaches you
     hints.set(prev, { text: 'NO CAMPING', color: 0xc96f5a, target: cur });
@@ -165,6 +175,7 @@ on('respawn', () => {
   restoreUnstable(unstables);
 });
 on('rayhit', () => quipAtPlayer('spf', 'SPF 5000'));
+on('cloudenter', () => quipAtPlayer('cloud', "CAN'T SEE?\nCAN'T STEER?"));
 
 function restartRun() {
   player.reset();
@@ -221,6 +232,7 @@ function render(delta, alpha) {
   }
   syncMoverMeshes(movers, alpha);
   syncCrumbleMeshes(crumblers, levelTime);
+  cloudScape.update(levelTime);
   shockwaves.update(delta);
   platformPulse.update(delta);
   syncUnstableMeshes(unstables, levelTime); // after the pulse so the wobble glow wins
@@ -241,7 +253,7 @@ const debugPanel = createDebugPanel({
   restartRun,
 });
 
-window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, sun, sunRays, TUNING }; // debug/testing handle
+window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, sun, sunRays, TUNING }; // debug/testing handle
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;

@@ -66,6 +66,10 @@ export function createPostFX(renderer, scene, camera) {
   let swallowTarget = 0;
   on('eaten', () => { swallowTarget = 1; }); // the maw closes over the screen
   on('respawn', () => { swallowTarget = 0; });
+  let cloudTarget = 0;
+  on('cloudenter', () => { cloudTarget = 1; });
+  on('cloudexit', () => { cloudTarget = 0; });
+  on('respawn', () => { cloudTarget = 0; });
 
   function render(dt, speedFovTarget = 0, rushTarget = 0, verticalVel = 0) {
     u.uPulse.value *= Math.exp(-6 * dt);
@@ -84,6 +88,10 @@ export function createPostFX(renderer, scene, camera) {
     // being swallowed: fast to black, gentle release after respawn
     u.uSwallow.value += (swallowTarget - u.uSwallow.value)
       * (1 - Math.exp((swallowTarget > u.uSwallow.value ? -14 : -4) * dt));
+
+    // cloud veil: quick white-in, softer clear-out
+    u.uCloud.value += (cloudTarget - u.uCloud.value)
+      * (1 - Math.exp((cloudTarget > u.uCloud.value ? -10 : -5) * dt));
 
     // dash burst: horizontal streaks flare then die with the dash surplus
     u.uDashAir.value *= Math.exp(-2.2 * dt);

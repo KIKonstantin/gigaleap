@@ -41,6 +41,9 @@ export function createScene() {
   function followPlayer(pos) {
     sun.position.set(pos.x + 80, pos.y + 120, pos.z + 60);
     sun.target.position.set(pos.x, pos.y, pos.z);
+    // the tower wanders kilometers horizontally — keep the void-cover under us
+    floor.position.x = pos.x;
+    floor.position.z = pos.z;
   }
 
   return { scene, followPlayer };

@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { emit, on } from '../core/events.js';
 
 const ACTIVE_LEVEL = 4;
-const COOLDOWN_BY_LEVEL = { 4: 7.0, 5: 5.5, 6: 4.0 }; // 6 = level >= 6
+const COOLDOWN_BY_LEVEL = { 4: 7.0, 5: 6.0, 6: 5.2, 7: 4.4, 8: 3.7, 9: 3.0 }; // 9 = level >= 9
 const COOLDOWN_JITTER = 1.0; // +- uniform seconds
 const CHARGE_TIME = 1.2; // total telegraph
 const LOCK_TIME = 0.35; // final part of the charge: aim frozen, line red
@@ -109,7 +109,7 @@ export function createSunRays(scene, { sun, player, getLevel }) {
 
   function rollCooldown() {
     if (cooldownOverride > 0) return cooldownOverride;
-    const base = COOLDOWN_BY_LEVEL[Math.min(Math.max(getLevel(), 4), 6)];
+    const base = COOLDOWN_BY_LEVEL[Math.min(Math.max(getLevel(), 4), 9)];
     return base + (Math.random() * 2 - 1) * COOLDOWN_JITTER;
   }
 

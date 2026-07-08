@@ -77,6 +77,8 @@ export function createDebugPanel({
   fPhys.add(TUNING, 'GRAVITY_DOWN', 5, 200, 1).name('gravity (falling)');
   fPhys.add(TUNING, 'DASH_SPEED', 0, 150, 1).name('dash speed');
   fPhys.add(TUNING, 'TERMINAL_VELOCITY', 50, 300, 5).name('terminal velocity');
+  fPhys.add(TUNING, 'CLOUD_DRAG', 0, 5, 0.1).name('cloud drag');
+  fPhys.add(TUNING, 'CLOUD_AIR_ACCEL', 0, 60, 1).name('cloud air accel');
   fPhys.add({ reset: () => {
     Object.assign(TUNING, TUNING_DEFAULTS);
     gui.controllersRecursive().forEach((c) => c.updateDisplay());

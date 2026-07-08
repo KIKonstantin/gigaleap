@@ -23,7 +23,7 @@ const GRAVITY_DOWN = 70;
 const SPRINT_SPEED = 35;
 const APEX = (JUMP_SPEED * JUMP_SPEED) / (2 * GRAVITY_UP); // ~110.6 m
 
-const CLIMB_COUNT = 40;
+const CLIMB_COUNT = 64; // 8 climb checkpoints + start pad = 9 levels
 const CHECKPOINT_EVERY = 8;
 // the finale: the last nodes leave the random wander and orbit the SUN.
 // The orbit is the GAUNTLET — the hardest stretch of the game: unstable
@@ -41,7 +41,7 @@ const RING_PLAN = [
   { step: 80, dr: 0, rise: 6, kind: 'dash' },
   { step: 45, dr: 0, rise: 18, kind: 'unstable' },
   { step: 80, dr: 0, rise: 6, kind: 'dash' },
-  { step: 45, dr: 25, rise: 18, kind: 'plain' }, // LEVEL 6 checkpoint
+  { step: 45, dr: 25, rise: 18, kind: 'plain' }, // LEVEL 9 checkpoint
   { step: 64, dr: 20, rise: 4, kind: 'dash' }, // the goal: one last dash
 ];
 
@@ -84,6 +84,8 @@ function buildLevel() {
   let bridgeSlot = 0;
   let dashSlot = 0;
   let unstableSlot = 0;
+  let cloudSlot = 0;
+  const clouds = []; // gameplay drag-cloud ellipsoids, one per cloud hop
   let prevAmp = 0, prevVertAmp = 0;
   let prevNoDash = false; // no dash aim from a crumbling exit or unstable ground
 
@@ -178,18 +180,24 @@ function buildLevel() {
       continue;
     }
 
+    // cloud hops: a giant drag-cloud blocks the middle of the flight path —
+    // air control dies inside it, only a dash punches through (clouds.js).
+    // Same clean-takeoff guards as dash gaps; from level 3 up.
+    const isCloud = eligible && i > 16 && prevAmp === 0 && prevVertAmp === 0
+      && !prevNoDash && ++cloudSlot % 2 === 1;
     // dash-only gaps: placed just BEYOND max jump range, reachable only with
     // the Ctrl air-dash. Never after a mover (its sway would stack on top)
     // and never off crumbling/unstable ground (no time to line up the aim).
-    const isDash = eligible && prevAmp === 0 && prevVertAmp === 0
+    const isDash = eligible && !isCloud && prevAmp === 0 && prevVertAmp === 0
       && !prevNoDash && ++dashSlot % 4 === 2;
     // roughly every 3rd eligible platform moves; every 3rd mover is vertical
-    const isMover = eligible && !isDash && ++moverSlot % 3 === 0;
+    const isMover = eligible && !isCloud && !isDash && ++moverSlot % 3 === 0;
     const isVertical = isMover && moverSlot % 9 === 0;
     const amp = isMover && !isVertical ? 25 + rand() * 20 : 0;
     const vertAmp = isVertical ? 15 + rand() * 10 : 0;
     // brittle nodes: stand longer than 2 s and they let go (see unstable.js)
-    const isUnstable = eligible && !isDash && !isMover && ++unstableSlot % 3 === 1;
+    const isUnstable = eligible && !isCloud && !isDash && !isMover
+      && ++unstableSlot % 3 === 1;
 
     // mixed rises: mostly climbs, some near-flats, occasional slight descents
     const roll = rand();
@@ -206,6 +214,11 @@ function buildLevel() {
     if (isDash) {
       rise = 4 + rand() * 8; // dashes are horizontal — keep the rise gentle
       gap = jumpRange(rise) + 14 + rand() * 8; // beyond jump range, within dash range
+    } else if (isCloud) {
+      // within plain jump range geometrically — the cloud's drag is what
+      // makes it undershoot without a dash (verified: no-dash lands ~80 m)
+      rise = 4 + rand() * 8;
+      gap = 92 + rand() * 10;
     } else {
       // hard reachability clamp at the movers' worst positions, with a safety
       // margin that shrinks as skill grows
@@ -214,14 +227,22 @@ function buildLevel() {
     }
 
     const width = isGoal ? 15 : isCheckpoint ? 16
-      : (isDash ? 16 : isUnstable ? 12 : 14) - 5.5 * p + (rand() - 0.5) * 2;
+      : (isDash || isCloud ? 16 : isUnstable ? 12 : 14) - 5.5 * p + (rand() - 0.5) * 2;
     const half = width / 2;
     const thickness = isGoal ? 3 : 2.5 + rand() * 0.8;
 
+    const srcX = x, srcY = y, srcZ = z; // takeoff platform top-center
     const dist = prevHalf + gap + half;
     x += Math.sin(heading) * dist;
     z += Math.cos(heading) * dist;
     y += rise;
+
+    if (isCloud) {
+      clouds.push({
+        pos: [round2((srcX + x) / 2), round2(srcY + 80), round2((srcZ + z) / 2)],
+        r: [45, 30, 45],
+      });
+    }
 
     const color = isGoal ? GOAL_COLOR : isCheckpoint ? CHECKPOINT_COLOR
       : isDash ? DASH_COLOR : isUnstable ? UNSTABLE_COLOR
@@ -235,6 +256,7 @@ function buildLevel() {
     if (isCheckpoint) def.checkpoint = true;
     if (isGoal) def.goal = true;
     if (isDash) def.dash = true;
+    if (isCloud) def.cloud = true;
     if (isUnstable) def.unstable = true;
     if (isMover) {
       // horizontal movers sway perpendicular to the approach direction
@@ -257,9 +279,29 @@ function buildLevel() {
     prevNoDash = isUnstable;
   }
 
+  // decorative clouds: scattered around the tower, never near the paths
+  const deco = [];
+  let guard = 0;
+  while (deco.length < 20 && guard++ < 200) {
+    const p = platforms[Math.floor(rand() * platforms.length)];
+    const ang = rand() * Math.PI * 2;
+    const dist = 130 + rand() * 130;
+    const cx = p.pos[0] + Math.cos(ang) * dist;
+    const cz = p.pos[2] + Math.sin(ang) * dist;
+    const cy = p.pos[1] + rand() * 60 - 30;
+    const tooClose = platforms.some((q) =>
+      Math.hypot(q.pos[0] - cx, q.pos[2] - cz) < 80 && Math.abs(q.pos[1] - cy) < 90)
+      || clouds.some((c) => Math.hypot(c.pos[0] - cx, c.pos[2] - cz) < 120);
+    if (tooClose) continue;
+    deco.push({
+      pos: [round2(cx), round2(cy), round2(cz)],
+      r: [round2(20 + rand() * 15), round2(10 + rand() * 6), round2(20 + rand() * 15)],
+    });
+  }
+
   // the sun's world anchor: the center of the orbit, mid-climb height
   const sunAnchor = [round2(ring.cx), round2(ring.startY + 85), round2(ring.cz)];
-  return { platforms, sunAnchor };
+  return { platforms, sunAnchor, clouds, deco };
 }
 
 function round2(v) {
@@ -269,3 +311,7 @@ function round2(v) {
 const built = buildLevel();
 export const PLATFORMS = built.platforms;
 export const SUN_ANCHOR = built.sunAnchor;
+export const CLOUDS = built.clouds; // gameplay drag clouds
+export const CLOUD_DECO = built.deco; // visual-only scenery
+const goalDef = PLATFORMS[PLATFORMS.length - 1];
+export const GOAL_TOP = goalDef.pos[1] + goalDef.size[1] / 2;

@@ -2,6 +2,7 @@
 // game feel: coyote time, jump buffering, variable jump height, air control.
 // Pure JS (no three.js import) so it can be unit-tested in node.
 import { resolveAxis, overlaps } from './collision.js';
+import { pointInCloud } from '../level/clouds.js';
 import { emit } from '../core/events.js';
 
 // HEAVY hulk tuning: asymmetric gravity — you launch hard against 35 m/s²
@@ -22,6 +23,8 @@ export const TUNING = {
   DASH_SPEED: 70, // Ctrl mid-air burst along the facing direction
   DASH_DECAY: 0.8, // /s — surplus above AIR_SPEED bleeds off smoothly
   FRICTION: 160, // scaled to sprint 35 — release keys, stop in ~3.8 m
+  CLOUD_DRAG: 2.0, // /s — horizontal velocity bleed while inside a cloud
+  CLOUD_AIR_ACCEL: 10, // air control barely works in there — dash through
 };
 export const TUNING_DEFAULTS = Object.freeze({ ...TUNING });
 
@@ -34,7 +37,7 @@ const EYE_ABOVE_CENTER = 0.72; // eye at feet + 1.62 m
 const RESPAWN_DROP = 700; // failsafe — normally the sun eats you well before this
 const LAND_FX_MIN_IMPACT = 8;
 
-export function createController(platforms) {
+export function createController(platforms, clouds = []) {
   const startPad = platforms[0];
 
   const c = {
@@ -51,6 +54,7 @@ export function createController(platforms) {
     coyoteTimer: 0,
     bufferTimer: 0,
     jumpCutDone: true,
+    inCloud: false, // airborne inside a drag cloud (see level/clouds.js)
     flying: false, // debug noclip: WASD + Space up / Ctrl down, no collision
     flySpeed: 40,
     invincible: false, // debug: fall failsafe off, sun refuses to eat
@@ -110,6 +114,10 @@ export function createController(platforms) {
 
     // --- debug fly/noclip: no gravity, no collision, no events ---
     if (c.flying) {
+      if (c.inCloud) {
+        c.inCloud = false;
+        emit('cloudexit');
+      }
       input.jumpQueued = false;
       input.dashQueued = false;
       const fwd = (input.forward ? 1 : 0) - (input.back ? 1 : 0);
@@ -140,6 +148,11 @@ export function createController(platforms) {
       }
     }
 
+    // --- clouds: inside one, air control dies and speed bleeds (below) ---
+    const wasInCloud = c.inCloud;
+    c.inCloud = !c.grounded && pointInCloud(clouds, c.pos);
+    if (c.inCloud !== wasInCloud) emit(c.inCloud ? 'cloudenter' : 'cloudexit');
+
     c.coyoteTimer -= dt;
     c.bufferTimer -= dt;
     if (input.jumpQueued) {
@@ -158,7 +171,8 @@ export function createController(platforms) {
       const len = Math.hypot(wishX, wishZ);
       wishX /= len; wishZ /= len;
 
-      const accel = c.grounded ? T.GROUND_ACCEL : T.AIR_ACCEL;
+      const accel = c.grounded ? T.GROUND_ACCEL
+        : c.inCloud ? T.CLOUD_AIR_ACCEL : T.AIR_ACCEL;
       // in the air, steering may never CLAMP AWAY dash surplus — input can't
       // add speed beyond AIR_SPEED but keeps whatever the dash granted
       const preSpeed = Math.hypot(c.vel.x, c.vel.z);
@@ -215,6 +229,16 @@ export function createController(platforms) {
         const target = T.AIR_SPEED + (airSpeed - T.AIR_SPEED) * Math.exp(-T.DASH_DECAY * dt);
         c.vel.x *= target / airSpeed;
         c.vel.z *= target / airSpeed;
+      }
+      // cloud drag: the cloud swallows ordinary momentum — but dash surplus
+      // punches through untouched (stacking both would kill the dash too)
+      if (c.inCloud) {
+        const spd = Math.hypot(c.vel.x, c.vel.z);
+        if (spd <= T.AIR_SPEED + 0.5) {
+          const f = Math.exp(-T.CLOUD_DRAG * dt);
+          c.vel.x *= f;
+          c.vel.z *= f;
+        }
       }
     }
 

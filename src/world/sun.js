@@ -7,7 +7,7 @@
 // blinks every 11 seconds exactly; the smile widens as you climb.
 import * as THREE from 'three';
 import { emit } from '../core/events.js';
-import { SUN_ANCHOR } from '../level/levelData.js';
+import { SUN_ANCHOR, GOAL_TOP } from '../level/levelData.js';
 
 const SUN_DIR = new THREE.Vector3(80, 120, 60).normalize(); // matches the light
 const DISTANCE = 800;
@@ -292,7 +292,7 @@ export function createSun(scene) {
     u.uLook.value.y += (-ty - u.uLook.value.y) * (1 - Math.exp(-3.5 * dt));
 
     // it is pleased with your ascent
-    u.uSmile.value = THREE.MathUtils.clamp(playerHeight / 685, 0, 1);
+    u.uSmile.value = THREE.MathUtils.clamp(playerHeight / (GOAL_TOP * 1.15), 0, 1);
   }
 
   return {
