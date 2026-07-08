@@ -235,7 +235,7 @@ function render(delta, alpha) {
   syncMoverMeshes(movers, alpha);
   syncCrumbleMeshes(crumblers, levelTime);
   cloudScape.update(levelTime);
-  sea.update(levelTime, delta, player.pos);
+  sea.update(levelTime, delta, player.pos, player.activeCheckpoint.max.y);
   shockwaves.update(delta);
   platformPulse.update(delta);
   syncUnstableMeshes(unstables, levelTime); // after the pulse so the wobble glow wins
