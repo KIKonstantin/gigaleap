@@ -1,29 +1,31 @@
-// DOM HUD: live height, persisted best height, start/win overlays.
-const BEST_KEY = 'gigaleap-best';
-
+// DOM HUD: current level, live height, run time, start/win overlays.
 export function createHUD() {
+  const levelEl = document.getElementById('level');
   const heightEl = document.getElementById('height');
-  const bestEl = document.getElementById('best');
-  const staresEl = document.getElementById('stares');
-  let lastStares = -1;
+  const timeEl = document.getElementById('time');
   const startOverlay = document.getElementById('startOverlay');
   const winOverlay = document.getElementById('winOverlay');
   const winStats = document.getElementById('winStats');
 
-  let best = parseFloat(localStorage.getItem(BEST_KEY)) || 0;
-  let lastShown = -Infinity;
-  bestEl.textContent = `${best.toFixed(1)} m`;
+  let lastHeight = -Infinity;
+  let lastLevel = -1;
+  let lastSecond = -1;
 
-  function update(height) {
+  function update(height, level, time) {
     const h = Math.max(height, 0);
-    if (Math.abs(h - lastShown) >= 0.05) {
+    if (Math.abs(h - lastHeight) >= 0.05) {
       heightEl.textContent = `${h.toFixed(1)} m`;
-      lastShown = h;
+      lastHeight = h;
     }
-    if (h > best) {
-      best = h;
-      bestEl.textContent = `${best.toFixed(1)} m`;
-      localStorage.setItem(BEST_KEY, best.toFixed(1));
+    const lvl = Math.max(level, 1);
+    if (lvl !== lastLevel) {
+      levelEl.textContent = String(lvl);
+      lastLevel = lvl;
+    }
+    const second = Math.floor(time);
+    if (second !== lastSecond) {
+      timeEl.textContent = formatTime(time);
+      lastSecond = second;
     }
   }
 
@@ -34,25 +36,13 @@ export function createHUD() {
     startOverlay.classList.add('hidden');
   }
 
-  function setStares(n) {
-    if (n === lastStares) return;
-    lastStares = n;
-    staresEl.textContent = String(n);
-  }
-
   return {
     update,
-    setStares,
     showWin,
     hideWin: () => winOverlay.classList.add('hidden'),
     isWinShown: () => !winOverlay.classList.contains('hidden'),
     showStart: () => startOverlay.classList.remove('hidden'),
     hideStart: () => startOverlay.classList.add('hidden'),
-    resetBest: () => {
-      best = 0;
-      bestEl.textContent = '0.0 m';
-      localStorage.removeItem(BEST_KEY);
-    },
   };
 }
 

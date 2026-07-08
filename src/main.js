@@ -216,7 +216,6 @@ function render(delta, alpha) {
   skyDome.follow(camera.position);
   sun.update(delta, camera, player, input.locked);
   sunRays.update(delta, input.locked);
-  hud.setStares(sun.stares());
   if (sun.stares() >= 2) {
     quipAtPlayer('eyes', 'EYES HURT WHEN YOU\nLOOK AT THE SUN');
   }
@@ -226,7 +225,7 @@ function render(delta, alpha) {
   platformPulse.update(delta);
   syncUnstableMeshes(unstables, levelTime); // after the pulse so the wobble glow wins
   levelText.update(delta, camera.position);
-  hud.update(player.feetY());
+  hud.update(player.feetY(), levelShown, runTime);
 
   const sprinting = input.sprint && Math.hypot(player.vel.x, player.vel.z) > 8;
   // wind rush ramps with fall speed (starts at 25 m/s, maxes at terminal 130)

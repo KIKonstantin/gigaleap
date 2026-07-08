@@ -62,7 +62,6 @@ export function createDebugPanel({
   fPlayer.add(player, 'flying').name('fly (V)').listen();
   fPlayer.add(player, 'flySpeed', 5, 150, 1).name('fly speed');
   fPlayer.add(player, 'invincible').name('invincible');
-  fPlayer.add({ reset: () => hud.resetBest() }, 'reset').name('reset best');
 
   // --- Physics -------------------------------------------------------------
   const fPhys = gui.addFolder('Physics');
