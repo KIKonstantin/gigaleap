@@ -4,16 +4,18 @@ import { input, initInput } from './core/input.js';
 import { on } from './core/events.js';
 import { createScene } from './world/scene.js';
 import { createSun } from './world/sun.js';
+import { createSunRays } from './world/sunRays.js';
 import { createSkyDome } from './world/skyDome.js';
 import { buildLevel, syncMoverMeshes } from './level/level.js';
 import { stepMovers } from './level/movers.js';
 import { stepCrumble, restoreCrumble, syncCrumbleMeshes } from './level/crumble.js';
-import { createController } from './player/controller.js';
+import { createController, TUNING } from './player/controller.js';
 import { createPostFX } from './fx/postfx.js';
 import { createShockwaves } from './fx/shockwave.js';
 import { createPlatformPulse } from './fx/platformPulse.js';
 import { createLevelText } from './fx/levelText.js';
 import { createHUD } from './ui/hud.js';
+import { createDebugPanel } from './ui/debugPanel.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: false }); // MSAA lives in the composer target
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -50,6 +52,8 @@ const hud = createHUD();
 // the start pad counts as checkpoint 0, so the first landing shows LEVEL 1
 const checkpoints = platforms.filter((p) => p.def.checkpoint);
 let levelShown = 0;
+
+const sunRays = createSunRays(scene, { sun, player, getLevel: () => levelShown });
 
 function showLevelAt(platform, level) {
   levelShown = level;
@@ -124,17 +128,20 @@ on('win', ({ height }) => {
 });
 on('respawn', () => restoreCrumble(crumblers));
 
+function restartRun() {
+  player.reset();
+  restoreCrumble(crumblers);
+  sun.reset();
+  sunRays.reset();
+  levelShown = 0;
+  hintsShown.clear();
+  runTime = 0;
+  hud.hideWin();
+  if (!input.locked) hud.showStart();
+}
+
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyR') {
-    player.reset();
-    restoreCrumble(crumblers);
-    sun.reset();
-    levelShown = 0;
-    hintsShown.clear();
-    runTime = 0;
-    hud.hideWin();
-    if (!input.locked) hud.showStart();
-  }
+  if (e.code === 'KeyR') restartRun();
 });
 
 function update(dt) {
@@ -164,6 +171,7 @@ function render(delta, alpha) {
   followPlayer(p);
   skyDome.follow(camera.position);
   sun.update(delta, camera, player, input.locked);
+  sunRays.update(delta, input.locked);
   hud.setStares(sun.stares());
   syncMoverMeshes(movers, alpha);
   syncCrumbleMeshes(crumblers, levelTime);
@@ -176,9 +184,17 @@ function render(delta, alpha) {
   // wind rush ramps with fall speed (starts at 25 m/s, maxes at terminal 130)
   const rush = Math.max(0, Math.min(1, (-player.vel.y - 25) / 105));
   postfx.render(delta, sprinting ? 9 : 0, rush, player.vel.y);
+  debugPanel.update();
 }
 
-window.__ascent = { player, input, on, movers, platforms, crumblers, sun }; // debug/testing handle
+const debugPanel = createDebugPanel({
+  player, sun, sunRays, checkpoints, platforms, crumblers, hud,
+  getLevel: () => levelShown,
+  setLevel: (n) => { levelShown = n; },
+  restartRun,
+});
+
+window.__ascent = { player, input, on, movers, platforms, crumblers, sun, sunRays, TUNING }; // debug/testing handle
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;

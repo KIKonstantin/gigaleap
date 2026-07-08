@@ -168,6 +168,8 @@ export function createSun(scene) {
   let eating = false;
   let swallowed = false;
   let eatY = 0;
+  let angry = 0; // sunRays charging: the scare-face becomes a target-lock face
+  let eatEnabled = true; // debug: the sun can be told to fast
 
   function reset() {
     lookCount = 0;
@@ -219,7 +221,8 @@ export function createSun(scene) {
 
     // THE FEEDING: a doomed fall summons it below you
     const drop = player.activeCheckpoint.max.y - player.pos.y;
-    if (!eating && locked && !player.grounded && drop > EAT_DROP && playerVel.y < -30) {
+    if (!eating && eatEnabled && !player.invincible && locked &&
+        !player.grounded && drop > EAT_DROP && playerVel.y < -30) {
       startEat(camera);
     }
     if (eating) {
@@ -255,7 +258,8 @@ export function createSun(scene) {
       if (visitTimer <= 0) endVisit();
       return;
     }
-    u.uScare.value = 0;
+    // charging a ray: ease into the wide-eyed hunting face
+    u.uScare.value += (angry - u.uScare.value) * (1 - Math.exp(-10 * dt));
 
     // near the summit the sun stops being sky and becomes a PLACE: it
     // anchors over the final platform ring so you orbit it to the goal
@@ -291,5 +295,15 @@ export function createSun(scene) {
     u.uSmile.value = THREE.MathUtils.clamp(playerHeight / 685, 0, 1);
   }
 
-  return { update, reset, stares: () => lookCount, isVisiting: () => visitTimer > 0 };
+  return {
+    update,
+    reset,
+    stares: () => lookCount,
+    isVisiting: () => visitTimer > 0,
+    isEating: () => eating,
+    position: mesh.position, // live ref — read-only by convention
+    setAngry: (v) => { angry = v; },
+    setEatEnabled: (v) => { eatEnabled = v; },
+    forceVisit: () => startVisit(), // debug
+  };
 }

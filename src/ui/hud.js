@@ -48,6 +48,11 @@ export function createHUD() {
     isWinShown: () => !winOverlay.classList.contains('hidden'),
     showStart: () => startOverlay.classList.remove('hidden'),
     hideStart: () => startOverlay.classList.add('hidden'),
+    resetBest: () => {
+      best = 0;
+      bestEl.textContent = '0.0 m';
+      localStorage.removeItem(BEST_KEY);
+    },
   };
 }
 

@@ -8,18 +8,23 @@ import { emit } from '../core/events.js';
 // but fall under 70 m/s², so the whole ~110 m arc lasts only ~4.3 s and the
 // descent slams. Terminal velocity 130 m/s; sprint 35 m/s covers the ~100 m
 // gaps; huge air accel lets you steer onto far platforms mid-flight.
-const GRAVITY_UP = 35; // while rising
-const GRAVITY_DOWN = 70; // while falling — heaviness lives here
-const TERMINAL_VELOCITY = 130; // platforms are >= 2.5 thick (no-tunnel contract)
-const JUMP_SPEED = 88; // apex ~110.6 m
-const WALK_SPEED = 6;
-const SPRINT_SPEED = 35; // hold Shift
-const AIR_SPEED = 35; // full aerial control regardless of Shift
-const GROUND_ACCEL = 80;
-const AIR_ACCEL = 60;
-const DASH_SPEED = 70; // Ctrl mid-air burst along the facing direction
-const DASH_DECAY = 0.8; // /s — surplus above AIR_SPEED bleeds off smoothly
-const FRICTION = 160; // scaled to sprint 35 — release keys, stop in ~3.8 m
+// Mutable so the debug panel can live-tune; read per-step inside step().
+export const TUNING = {
+  GRAVITY_UP: 35, // while rising
+  GRAVITY_DOWN: 70, // while falling — heaviness lives here
+  TERMINAL_VELOCITY: 130, // platforms are >= 2.5 thick (no-tunnel contract)
+  JUMP_SPEED: 88, // apex ~110.6 m
+  WALK_SPEED: 6,
+  SPRINT_SPEED: 35, // hold Shift
+  AIR_SPEED: 35, // full aerial control regardless of Shift
+  GROUND_ACCEL: 80,
+  AIR_ACCEL: 60,
+  DASH_SPEED: 70, // Ctrl mid-air burst along the facing direction
+  DASH_DECAY: 0.8, // /s — surplus above AIR_SPEED bleeds off smoothly
+  FRICTION: 160, // scaled to sprint 35 — release keys, stop in ~3.8 m
+};
+export const TUNING_DEFAULTS = Object.freeze({ ...TUNING });
+
 const LANDING_PLANT = 0.2; // horizontal vel multiplier on hands-off landings
 const COYOTE_TIME = 0.12;
 const JUMP_BUFFER = 0.12;
@@ -46,11 +51,17 @@ export function createController(platforms) {
     coyoteTimer: 0,
     bufferTimer: 0,
     jumpCutDone: true,
+    flying: false, // debug noclip: WASD + Space up / Ctrl down, no collision
+    flySpeed: 40,
+    invincible: false, // debug: fall failsafe off, sun refuses to eat
     feetY: () => c.pos.y - HALF.y,
     step,
     reset,
     devour, // the sun got you: respawn at the checkpoint
+    knockback, // sun ray blast: shove + pop airborne
+    placeAt: null, // assigned below (debug teleport)
   };
+  c.placeAt = placeOn;
 
   function placeOn(platform) {
     c.pos.x = (platform.min.x + platform.max.x) / 2;
@@ -78,8 +89,44 @@ export function createController(platforms) {
     emit('respawn');
   }
 
+  // A sun ray blast: horizontal shove is SET (deterministic), the vertical
+  // pop launches you airborne so ground friction can't eat the push. The
+  // airborne dash-surplus decay bounds the shove exactly like a dash.
+  function knockback(vec) {
+    if (c.won) return;
+    c.vel.x = vec.x;
+    c.vel.z = vec.z;
+    c.vel.y = Math.max(c.vel.y, vec.y);
+    c.grounded = false;
+    c.groundPlatform = null;
+    c.coyoteTimer = 0; // no free jump off a blast
+    c.jumpCutDone = true; // releasing Space must not cut blast velocity
+    c.dashAvailable = true; // the dash is your recovery tool
+  }
+
   function step(dt, input) {
+    const T = TUNING;
     c.prevPos.x = c.pos.x; c.prevPos.y = c.pos.y; c.prevPos.z = c.pos.z;
+
+    // --- debug fly/noclip: no gravity, no collision, no events ---
+    if (c.flying) {
+      input.jumpQueued = false;
+      input.dashQueued = false;
+      const fwd = (input.forward ? 1 : 0) - (input.back ? 1 : 0);
+      const strafe = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+      const sin = Math.sin(input.yaw), cos = Math.cos(input.yaw);
+      const speed = c.flySpeed * (input.sprint ? 3 : 1);
+      const n = Math.hypot(fwd, strafe) || 1;
+      c.vel.x = ((-sin * fwd + cos * strafe) / n) * speed;
+      c.vel.z = ((-cos * fwd - sin * strafe) / n) * speed;
+      c.vel.y = ((input.jumpHeld ? 1 : 0) - (input.dashHeld ? 1 : 0)) * speed;
+      c.pos.x += c.vel.x * dt;
+      c.pos.y += c.vel.y * dt;
+      c.pos.z += c.vel.z * dt;
+      c.grounded = false;
+      c.groundPlatform = null;
+      return;
+    }
 
     // --- moving platforms: ride the one you stand on, get pushed by others ---
     if (c.grounded && c.groundPlatform?.delta) {
@@ -111,13 +158,13 @@ export function createController(platforms) {
       const len = Math.hypot(wishX, wishZ);
       wishX /= len; wishZ /= len;
 
-      const accel = c.grounded ? GROUND_ACCEL : AIR_ACCEL;
+      const accel = c.grounded ? T.GROUND_ACCEL : T.AIR_ACCEL;
       // in the air, steering may never CLAMP AWAY dash surplus — input can't
       // add speed beyond AIR_SPEED but keeps whatever the dash granted
       const preSpeed = Math.hypot(c.vel.x, c.vel.z);
       const maxSpeed = c.grounded
-        ? (input.sprint ? SPRINT_SPEED : WALK_SPEED)
-        : Math.max(AIR_SPEED, preSpeed);
+        ? (input.sprint ? T.SPRINT_SPEED : T.WALK_SPEED)
+        : Math.max(T.AIR_SPEED, preSpeed);
       c.vel.x += wishX * accel * dt;
       c.vel.z += wishZ * accel * dt;
       const speed = Math.hypot(c.vel.x, c.vel.z);
@@ -128,7 +175,7 @@ export function createController(platforms) {
     } else if (c.grounded) {
       const speed = Math.hypot(c.vel.x, c.vel.z);
       if (speed > 0) {
-        const newSpeed = Math.max(0, speed - FRICTION * dt);
+        const newSpeed = Math.max(0, speed - T.FRICTION * dt);
         c.vel.x *= newSpeed / speed;
         c.vel.z *= newSpeed / speed;
       }
@@ -136,7 +183,7 @@ export function createController(platforms) {
 
     // --- jump: buffered press + grounded or coyote ---
     if (c.bufferTimer > 0 && (c.grounded || c.coyoteTimer > 0)) {
-      c.vel.y = JUMP_SPEED;
+      c.vel.y = T.JUMP_SPEED;
       c.bufferTimer = 0;
       c.coyoteTimer = 0;
       c.grounded = false;
@@ -155,8 +202,8 @@ export function createController(platforms) {
       input.dashQueued = false;
       if (!c.grounded && c.dashAvailable) {
         c.dashAvailable = false;
-        c.vel.x = -Math.sin(input.yaw) * DASH_SPEED;
-        c.vel.z = -Math.cos(input.yaw) * DASH_SPEED;
+        c.vel.x = -Math.sin(input.yaw) * T.DASH_SPEED;
+        c.vel.z = -Math.cos(input.yaw) * T.DASH_SPEED;
         if (c.vel.y < 0) c.vel.y = 0; // the dash catches you mid-fall
         emit('dash');
       }
@@ -164,8 +211,8 @@ export function createController(platforms) {
     // dash surplus bleeds off so the burst is punchy but bounded
     if (!c.grounded) {
       const airSpeed = Math.hypot(c.vel.x, c.vel.z);
-      if (airSpeed > AIR_SPEED) {
-        const target = AIR_SPEED + (airSpeed - AIR_SPEED) * Math.exp(-DASH_DECAY * dt);
+      if (airSpeed > T.AIR_SPEED) {
+        const target = T.AIR_SPEED + (airSpeed - T.AIR_SPEED) * Math.exp(-T.DASH_DECAY * dt);
         c.vel.x *= target / airSpeed;
         c.vel.z *= target / airSpeed;
       }
@@ -173,8 +220,8 @@ export function createController(platforms) {
 
     // --- gravity (always applied, so the ground re-collides every step);
     // falling pulls much harder than rising resists ---
-    c.vel.y -= (c.vel.y > 0 ? GRAVITY_UP : GRAVITY_DOWN) * dt;
-    if (c.vel.y < -TERMINAL_VELOCITY) c.vel.y = -TERMINAL_VELOCITY;
+    c.vel.y -= (c.vel.y > 0 ? T.GRAVITY_UP : T.GRAVITY_DOWN) * dt;
+    if (c.vel.y < -T.TERMINAL_VELOCITY) c.vel.y = -T.TERMINAL_VELOCITY;
 
     // --- integrate + resolve, horizontal axes before vertical ---
     const wasGrounded = c.grounded;
@@ -214,7 +261,7 @@ export function createController(platforms) {
       }
       emit('land', {
         impactSpeed,
-        intensity: Math.min(impactSpeed / TERMINAL_VELOCITY, 1),
+        intensity: Math.min(impactSpeed / T.TERMINAL_VELOCITY, 1),
         fx: impactSpeed > LAND_FX_MIN_IMPACT,
         platform: groundPlatform,
         position: { x: c.pos.x, y: groundPlatform.max.y, z: c.pos.z },
@@ -229,7 +276,7 @@ export function createController(platforms) {
     }
 
     // --- fell too far below the checkpoint -> respawn ---
-    if (c.pos.y < c.activeCheckpoint.max.y - RESPAWN_DROP) {
+    if (!c.invincible && c.pos.y < c.activeCheckpoint.max.y - RESPAWN_DROP) {
       placeOn(c.activeCheckpoint);
       emit('respawn');
     }

@@ -56,6 +56,13 @@ export function createPostFX(renderer, scene, camera) {
     u.uThump.value = 0.55; // the flinch
     fovKick -= 7;
   });
+  on('sunray', ({ phase }) => {
+    if (phase === 'fire') u.uPulse.value = Math.max(u.uPulse.value, 0.6);
+  });
+  on('rayhit', () => {
+    u.uThump.value = 0.9; // the blast
+    fovKick -= 10;
+  });
   let swallowTarget = 0;
   on('eaten', () => { swallowTarget = 1; }); // the maw closes over the screen
   on('respawn', () => { swallowTarget = 0; });

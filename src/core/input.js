@@ -12,6 +12,7 @@ export const input = {
   jumpQueued: false, // set on Space keydown edge, consumed by the controller
   jumpHeld: false,
   dashQueued: false, // set on Ctrl keydown edge, consumed by the controller
+  dashHeld: false, // Ctrl held — fly mode descends with it
   yaw: 0,
   pitch: 0,
   locked: false,
@@ -28,7 +29,7 @@ export function initInput(canvas, onLockChange) {
     input.locked = document.pointerLockElement === canvas;
     if (!input.locked) {
       input.forward = input.back = input.left = input.right = false;
-      input.sprint = input.jumpHeld = false;
+      input.sprint = input.jumpHeld = input.dashHeld = false;
     }
     if (onLockChange) onLockChange(input.locked);
   });
@@ -65,5 +66,6 @@ function setKey(code, down) {
     case 'KeyA': case 'ArrowLeft': input.left = down; break;
     case 'KeyD': case 'ArrowRight': input.right = down; break;
     case 'ShiftLeft': case 'ShiftRight': input.sprint = down; break;
+    case 'ControlLeft': case 'ControlRight': input.dashHeld = down; break;
   }
 }
