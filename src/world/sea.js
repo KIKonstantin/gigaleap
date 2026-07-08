@@ -55,16 +55,23 @@ export function createSea(scene, { getLevel }) {
   // mass from the tower top, with the capped gradient doubling as an ocean
   // horizon. Same draw call, the per-fragment fog math was already there.
   const seaFogCap = { value: 0.78 };
+  const stormMix = { value: 0 };
+  const deepColor = { value: new THREE.Color(0x0d2c47) };
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uSeaFogCap = seaFogCap;
+    shader.uniforms.uStormMix = stormMix;
+    shader.uniforms.uSeaDeep = deepColor;
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <fog_pars_fragment>',
-        '#include <fog_pars_fragment>\nuniform float uSeaFogCap;'
+        '#include <fog_pars_fragment>\nuniform float uSeaFogCap;\nuniform float uStormMix;\nuniform vec3 uSeaDeep;'
       )
       .replace(
         '#include <fog_fragment>',
-        `#ifdef USE_FOG
+        `// the scene lighting overdrives dark albedos — during a storm pull
+        // the LIT color toward deep navy, keeping half the facet shading
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, uSeaDeep, uStormMix);
+        #ifdef USE_FOG
           float seaFog = smoothstep(fogNear, fogFar, vFogDepth) * uSeaFogCap;
           gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, seaFog);
         #endif`
@@ -103,7 +110,8 @@ export function createSea(scene, { getLevel }) {
     }
     pos.needsUpdate = true;
     material.color.copy(CALM_COLOR).lerp(ROUGH_COLOR, storm);
-    seaFogCap.value = 0.78 - 0.45 * storm; // the storm burns through the haze
+    seaFogCap.value = 0.78 - 0.48 * storm; // the storm burns through the haze
+    stormMix.value = 0.5 * storm; // and swallows the light
   }
 
   return { update, storm: () => storm, seaLevel: () => mesh.position.y };
