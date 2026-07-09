@@ -1,0 +1,17 @@
+# Multiplayer room server (party/index.js) on Cloudflare Workers + a
+# Durable Object, via partyserver. Deploy: npm run party:deploy
+# The binding name "Main" maps to the client's /parties/main/:room path.
+name = "gigaleap"
+main = "party/index.js"
+compatibility_date = "2025-08-01"
+
+[dev]
+port = 1999
+
+[[durable_objects.bindings]]
+name = "Main"
+class_name = "GigaleapServer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GigaleapServer"]

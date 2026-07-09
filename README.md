@@ -39,19 +39,22 @@ low-poly ghosts (no collision) with a name floating overhead, and the HUD
 shows the live player count. Each player gets a unique server-assigned
 color and an auto-generated name.
 
-The game itself stays a static build; a small [PartyKit](https://partykit.io)
-room server relays positions (clients send ~12 Hz, the server rebroadcasts
-one batched snapshot at 10 Hz). Without a reachable server the game runs
-fully single-player.
+The game itself stays a static build; a small
+[partyserver](https://github.com/cloudflare/partyserver) room server on
+Cloudflare Workers relays positions (clients send ~12 Hz, the server
+rebroadcasts one batched snapshot at 10 Hz). Without a reachable server the
+game runs fully single-player.
 
 ```sh
-npm run party   # PartyKit dev server on localhost:1999
+npm run party   # local room server (wrangler dev) on localhost:1999
 npm run dev     # in a second terminal — connects to it automatically
 ```
 
-Deploy: `npm run party:deploy` (once), then set `VITE_PARTYKIT_HOST` to the
-printed host (e.g. `gigaleap.<user>.partykit.dev`, no protocol) in Vercel's
-environment variables and redeploy — Vite inlines it at build time.
+Deploy (once): `npx wrangler login` (free Cloudflare account), then
+`npm run party:deploy` — it prints the worker URL, e.g.
+`https://gigaleap.<subdomain>.workers.dev`. Set `VITE_PARTYKIT_HOST` to
+that host (no protocol) in Vercel's environment variables and redeploy —
+Vite inlines it at build time.
 
 ## Level guarantees
 

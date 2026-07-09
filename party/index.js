@@ -1,6 +1,8 @@
-// PartyKit room server: ghost multiplayer relay. Holds only the latest state
-// per connection and rebroadcasts one batched snapshot at 10 Hz, so client
-// receive cost stays flat no matter how many players are climbing.
+// Room server: ghost multiplayer relay, hosted on Cloudflare Workers as a
+// Durable Object via partyserver. Holds only the latest state per connection
+// and rebroadcasts one batched snapshot at 10 Hz, so client receive cost
+// stays flat no matter how many players are climbing.
+import { Server, routePartykitRequest } from 'partyserver';
 
 const ADJ = [
   'SWIFT', 'BRAVE', 'GIGA', 'LUCKY', 'SUNNY', 'STORMY', 'MIGHTY', 'SNEAKY',
@@ -18,12 +20,14 @@ const GOLDEN_ANGLE = 137.508; // degrees; spreads hues so concurrent players nev
 const STALE_MS = 120_000; // evict half-open zombies; hidden tabs still send
 // at worst once a minute under Chrome's intensive throttling, so they survive
 
-export default class GigaleapServer {
-  constructor(room) {
-    this.room = room;
-    this.nextSlot = 0;
-    this.players = new Map(); // conn.id -> { slot, hue, name, last, s: [x,y,z,yaw,g,w] | null }
-    this.timer = null;
+export class GigaleapServer extends Server {
+  nextSlot = 0;
+  players = new Map(); // conn.id -> { slot, hue, name, last, s: [x,y,z,yaw,g,w] | null }
+  timer = null;
+
+  findConn(id) {
+    for (const c of this.getConnections()) if (c.id === id) return c;
+    return undefined;
   }
 
   onConnect(conn) {
@@ -41,12 +45,12 @@ export default class GigaleapServer {
     this.players.set(conn.id, { slot, hue, name, last: Date.now(), s: existing?.s ?? null });
     conn.send(JSON.stringify({ t: 'welcome', id: conn.id, slot, hue, name, players: roster }));
     if (!existing) {
-      this.room.broadcast(JSON.stringify({ t: 'join', id: conn.id, hue, name }), [conn.id]);
+      this.broadcast(JSON.stringify({ t: 'join', id: conn.id, hue, name }), [conn.id]);
     }
     if (!this.timer) this.timer = setInterval(() => this.tick(), TICK_MS);
   }
 
-  onMessage(msg, conn) {
+  onMessage(conn, msg) {
     let m;
     try {
       m = JSON.parse(msg);
@@ -75,15 +79,15 @@ export default class GigaleapServer {
         any = true;
       }
     }
-    if (any) this.room.broadcast(JSON.stringify({ t: 'states', n: this.players.size, s }));
+    if (any) this.broadcast(JSON.stringify({ t: 'states', n: this.players.size, s }));
   }
 
   drop(id) {
     if (!this.players.delete(id)) return;
     try {
-      this.room.getConnection(id)?.close();
+      this.findConn(id)?.close();
     } catch {}
-    this.room.broadcast(JSON.stringify({ t: 'leave', id }));
+    this.broadcast(JSON.stringify({ t: 'leave', id }));
     if (this.players.size === 0 && this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -93,7 +97,7 @@ export default class GigaleapServer {
   onClose(conn) {
     // a reconnect replaces the connection under the same id — when the OLD
     // socket's close arrives late, the live replacement must not be dropped
-    const live = this.room.getConnection(conn.id);
+    const live = this.findConn(conn.id);
     if (live && live !== conn) return;
     this.drop(conn.id);
   }
@@ -102,3 +106,9 @@ export default class GigaleapServer {
     this.onClose(conn);
   }
 }
+
+export default {
+  fetch(request, env) {
+    return routePartykitRequest(request, env) ?? new Response('Not found', { status: 404 });
+  },
+};
