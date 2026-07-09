@@ -8,11 +8,15 @@ import PartySocket from 'partysocket';
 const SEND_MS = 83; // ~12 Hz; a setInterval (not the game loop) so players
 // idling on the start overlay — or in a hidden tab — keep reporting in
 
+// The deployed room server (public anyway — it ships in the bundle).
+// VITE_PARTYKIT_HOST overrides it; dev builds use the local wrangler dev.
+const PROD_HOST = 'gigaleap.kikonstantin.workers.dev';
+
 const r2 = (v) => Math.round(v * 100) / 100;
 
 export function createNetClient({ getState, onRoster, onJoin, onLeave, onStates, onCount, onStatus }) {
   const host = import.meta.env.VITE_PARTYKIT_HOST
-    || (import.meta.env.DEV ? 'localhost:1999' : null);
+    || (import.meta.env.DEV ? 'localhost:1999' : PROD_HOST);
   if (!host) {
     return {
       enabled: false,
