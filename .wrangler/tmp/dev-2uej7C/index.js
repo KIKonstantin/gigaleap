@@ -1006,8 +1006,8 @@ var GigaleapServer = class extends Server {
   }
 };
 var party_default = {
-  fetch(request, env2) {
-    return routePartykitRequest(request, env2) ?? new Response("Not found", { status: 404 });
+  async fetch(request, env2) {
+    return await routePartykitRequest(request, env2) ?? new Response("Not found", { status: 404 });
   }
 };
 

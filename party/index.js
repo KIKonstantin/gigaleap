@@ -108,7 +108,7 @@ export class GigaleapServer extends Server {
 }
 
 export default {
-  fetch(request, env) {
-    return routePartykitRequest(request, env) ?? new Response('Not found', { status: 404 });
+  async fetch(request, env) {
+    return (await routePartykitRequest(request, env)) ?? new Response('Not found', { status: 404 });
   },
 };
