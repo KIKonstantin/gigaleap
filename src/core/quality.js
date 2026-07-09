@@ -65,3 +65,38 @@ export function pickQuality(renderer) {
 export function saveQuality(tier) {
   try { localStorage.setItem(SAVED_KEY, tier); } catch { /* storage blocked */ }
 }
+
+// Runtime safety net for devices the boot heuristic overestimated: average
+// frame time over a rolling window (only while pointer-locked — menu frames
+// idle at ~1 fps by design and would poison the average). Missing the 30 fps
+// budget steps down ONE tier: the runtime-safe knobs apply immediately via
+// the callback, the tier is persisted so the boot-only knobs (sea grid,
+// material class, merged clouds, MSAA) land on the next load, and the
+// warmup restarts so the shader-recompile hitch isn't judged.
+export function createFrameGovernor(startTier, applyDowngrade) {
+  const BUDGET_MS = 33.4; // 30 fps
+  const WARMUP_FRAMES = 240;
+  const WINDOW_FRAMES = 180;
+  let tier = startTier;
+  let warmup = WARMUP_FRAMES;
+  let frames = 0;
+  let accMs = 0;
+
+  function sample(delta, active) {
+    if (!active || tier === 'low') return;
+    if (warmup > 0) { warmup--; return; }
+    accMs += delta * 1000;
+    if (++frames < WINDOW_FRAMES) return;
+    const avg = accMs / frames;
+    frames = 0;
+    accMs = 0;
+    if (avg > BUDGET_MS) {
+      tier = TIER_ORDER[TIER_ORDER.indexOf(tier) - 1];
+      saveQuality(tier);
+      applyDowngrade(tier, TIERS[tier], avg);
+      warmup = WARMUP_FRAMES;
+    }
+  }
+
+  return { sample, tier: () => tier };
+}

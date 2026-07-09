@@ -56,6 +56,32 @@ Deploy (once): `npx wrangler login` (free Cloudflare account), then
 that host (no protocol) in Vercel's environment variables and redeploy —
 Vite inlines it at build time.
 
+## Quality tiers
+
+The renderer scales to the hardware — the same build runs on a gaming rig
+and a Raspberry Pi-class embedded display. Three tiers (`src/core/quality.js`):
+
+- **high** — today's full look: 2048² shadows, 4× MSAA half-float post
+  chain, all 20 scenery clouds, 2× pixel ratio.
+- **med** — 1024² shadows, 2× MSAA on an 8-bit target, trimmed clouds/rain.
+- **low** — 0.75× render scale, no shadow pass (a blob disc under the player
+  keeps the landing-aim signal), no post chain (the eaten-blackout and
+  cloud-whiteout become DOM veils), Lambert materials, sea on a coarser
+  grid, scenery clouds baked into one static mesh.
+
+The tier is picked at boot from `?quality=low|med|high` (wins always), a
+saved downgrade in localStorage, or a GPU/UA heuristic. A frame governor
+watches the rolling frame time while playing and steps the tier down if the
+device can't hold 30 fps, persisting the choice for the next load.
+
+All platforms render as a single `InstancedMesh`; physics colliders are
+unchanged, but `platform.mesh` / `platform.material` (e.g. via
+`window.__ascent.platforms`) are now plain view records
+(`{position, rotation, scale, visible}` / `{emissiveIntensity}`) flushed
+into the instance buffers once per frame — not `THREE.Mesh` objects.
+Gameplay physics is identical on every tier: no tier option ever reaches
+the node-testable physics modules.
+
 ## Level guarantees
 
 The course is generated once from a fixed seed, and every gap is provably

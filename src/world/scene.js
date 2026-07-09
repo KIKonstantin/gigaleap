@@ -57,6 +57,10 @@ export function createScene({ shadows = true, shadowMapSize = 2048, shadowRadius
   // change, so three recompiles programs once — acceptable on a downgrade
   function setShadows(enabled) {
     sun.castShadow = enabled;
+    if (!enabled && sun.shadow.map) {
+      sun.shadow.map.dispose(); // reclaim the depth target's VRAM
+      sun.shadow.map = null;
+    }
   }
 
   return { scene, followPlayer, setDaylight, setShadows };

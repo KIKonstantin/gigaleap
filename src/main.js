@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { pickQuality } from './core/quality.js';
+import { pickQuality, createFrameGovernor } from './core/quality.js';
 import { startLoop } from './core/loop.js';
 import { input, initInput } from './core/input.js';
 import { on } from './core/events.js';
@@ -81,7 +81,22 @@ const postfx = createPostFX(renderer, scene, camera, {
   samples: Q.msaaSamples,
 });
 // no shadow map on the low tier — a blob disc keeps the landing-aim signal
-const blobShadow = Q.shadows ? null : createBlobShadow(scene, platforms, player);
+let blobShadow = Q.shadows ? null : createBlobShadow(scene, platforms, player);
+
+// safety net: if this device can't hold 30 fps, step the tier down at
+// runtime (resolution/shadows/composer/rain) and persist for the next load
+const governor = createFrameGovernor(quality.tier, (tier, opts, avgMs) => {
+  console.warn(`gigaleap: ${avgMs.toFixed(1)} ms/frame — dropping quality to "${tier}" (saved for next load)`);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, opts.pixelRatio));
+  postfx.setSize(window.innerWidth, window.innerHeight);
+  rain.setCount(opts.rainCount);
+  if (!opts.shadows) {
+    renderer.shadowMap.enabled = false;
+    setShadows(false);
+    if (!blobShadow) blobShadow = createBlobShadow(scene, platforms, player);
+  }
+  if (!opts.composer) postfx.setEnabled(false);
+});
 const shockwaves = createShockwaves(scene);
 const platformPulse = createPlatformPulse();
 const bouncePads = createBouncePads(platforms);
@@ -381,6 +396,7 @@ function render(delta, alpha) {
   // wind rush ramps with fall speed (starts at 25 m/s, maxes at terminal 130)
   const rush = Math.max(0, Math.min(1, (-player.vel.y - 25) / 105));
   postfx.render(delta, sprinting ? 9 : 0, rush, player.vel.y);
+  governor.sample(delta, input.locked);
   debugPanel.update();
 }
 
@@ -391,7 +407,7 @@ const debugPanel = createDebugPanel({
   restartRun,
 });
 
-window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, winds, sun, sunRays, sea, audio, eclipse, rain, net, remotes, TUNING, quality, renderer }; // debug/testing handle
+window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, winds, sun, sunRays, sea, audio, eclipse, rain, net, remotes, TUNING, quality, renderer, governor }; // debug/testing handle
 
 let resizeTimer;
 window.addEventListener('resize', () => {
