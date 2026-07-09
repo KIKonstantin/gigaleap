@@ -34,7 +34,7 @@ function buildCloudGeometry(r, seed) {
   return merged;
 }
 
-export function createClouds(scene) {
+export function createClouds(scene, { decoCount = CLOUD_DECO.length } = {}) {
   const material = new THREE.MeshStandardMaterial({
     color: 0xf4f7f9,
     flatShading: true,
@@ -55,7 +55,7 @@ export function createClouds(scene) {
   };
 
   const gameplay = CLOUDS.map((def, i) => spawn(def, 7001 + i * 131));
-  const deco = CLOUD_DECO.map((def, i) => spawn(def, 9001 + i * 173));
+  const deco = CLOUD_DECO.slice(0, decoCount).map((def, i) => spawn(def, 9001 + i * 173));
 
   function update(time) {
     for (let i = 0; i < gameplay.length; i++) {

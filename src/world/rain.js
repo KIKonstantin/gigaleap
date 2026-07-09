@@ -13,11 +13,11 @@ function lcg(seed) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-export function createRain(scene) {
+export function createRain(scene, { count = COUNT } = {}) {
   const rand = lcg(777);
-  const positions = new Float32Array(COUNT * 6);
+  const positions = new Float32Array(count * 6);
   const drops = [];
-  for (let i = 0; i < COUNT; i++) {
+  for (let i = 0; i < count; i++) {
     drops.push({
       x: rand() * BOX.x,
       y: rand() * BOX.y,
@@ -43,6 +43,8 @@ export function createRain(scene) {
 
   const mod = (v, m) => ((v % m) + m) % m;
 
+  let active = count;
+
   function update(dt, cameraPos, storm) {
     if (storm <= 0.25) {
       mesh.visible = false;
@@ -54,7 +56,7 @@ export function createRain(scene) {
     const ox = cameraPos.x - BOX.x / 2;
     const oy = cameraPos.y - BOX.y / 2;
     const oz = cameraPos.z - BOX.z / 2;
-    for (let i = 0; i < COUNT; i++) {
+    for (let i = 0; i < active; i++) {
       const d = drops[i];
       d.x += d.vx * dt;
       d.y += d.vy * dt;
@@ -75,5 +77,11 @@ export function createRain(scene) {
     geometry.attributes.position.needsUpdate = true;
   }
 
-  return { update, visible: () => mesh.visible };
+  // governor hook: clamp the live streak count without rebuilding buffers
+  function setCount(n) {
+    active = Math.max(0, Math.min(count, n));
+    geometry.setDrawRange(0, active * 2);
+  }
+
+  return { update, visible: () => mesh.visible, setCount };
 }

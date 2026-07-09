@@ -12,7 +12,7 @@ const DAY = { hemi: 0.85, dir: 1.9 };
 const DUSK = { hemi: 0.12, dir: 0.15 };
 const DUSK_SKY = 0x1a2333;
 
-export function createScene() {
+export function createScene({ shadows = true, shadowMapSize = 2048, shadowRadius = 4 } = {}) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(SKY);
   scene.fog = new THREE.Fog(SKY, 100, 700); // ~100 m gaps need long sightlines
@@ -21,8 +21,8 @@ export function createScene() {
   scene.add(hemi);
 
   const sun = new THREE.DirectionalLight(0xfff4e0, 1.9);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.castShadow = shadows;
+  sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
   sun.shadow.camera.left = -60;
   sun.shadow.camera.right = 60;
   sun.shadow.camera.top = 60;
@@ -31,7 +31,7 @@ export function createScene() {
   sun.shadow.camera.far = 400;
   sun.shadow.bias = -0.0005;
   sun.shadow.normalBias = 0.02;
-  sun.shadow.radius = 4; // soft edges with plain PCF
+  sun.shadow.radius = shadowRadius; // soft edges with plain PCF
   scene.add(sun);
   scene.add(sun.target);
 
@@ -53,5 +53,11 @@ export function createScene() {
     scene.fog.color.copy(scene.background);
   }
 
-  return { scene, followPlayer, setDaylight };
+  // governor hook: dropping the shadow pass at runtime is a lights-hash
+  // change, so three recompiles programs once — acceptable on a downgrade
+  function setShadows(enabled) {
+    sun.castShadow = enabled;
+  }
+
+  return { scene, followPlayer, setDaylight, setShadows };
 }

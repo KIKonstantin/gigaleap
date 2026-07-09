@@ -108,5 +108,5 @@ export function createDebugPanel({
     state.height = `${player.feetY().toFixed(1)} m`;
   }
 
-  return { update };
+  return { update, isOpen: () => shown };
 }

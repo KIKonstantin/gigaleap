@@ -31,15 +31,15 @@ function lcg(seed) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-export function createSea(scene, { getLevel }) {
-  const geometry = new THREE.PlaneGeometry(SIZE, SIZE, SEGS, SEGS);
+export function createSea(scene, { getLevel, segs = SEGS }) {
+  const geometry = new THREE.PlaneGeometry(SIZE, SIZE, segs, segs);
   geometry.rotateX(-Math.PI / 2);
 
   // break the grid once: static XZ jitter makes the facets read as water,
   // not as a displaced checkerboard
   const pos = geometry.attributes.position;
   const rand = lcg(31337);
-  const cell = SIZE / SEGS;
+  const cell = SIZE / segs;
   for (let i = 0; i < pos.count; i++) {
     pos.setX(i, pos.getX(i) + (rand() - 0.5) * cell * 0.45);
     pos.setZ(i, pos.getZ(i) + (rand() - 0.5) * cell * 0.45);

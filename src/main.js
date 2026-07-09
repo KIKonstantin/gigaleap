@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pickQuality } from './core/quality.js';
 import { startLoop } from './core/loop.js';
 import { input, initInput } from './core/input.js';
 import { on } from './core/events.js';
@@ -22,6 +23,7 @@ import { stepUnstable, restoreUnstable, syncUnstableMeshes } from './level/unsta
 import { createBouncePads } from './level/bouncePads.js';
 import { createController, TUNING } from './player/controller.js';
 import { createPostFX } from './fx/postfx.js';
+import { createBlobShadow } from './fx/blobShadow.js';
 import { createShockwaves } from './fx/shockwave.js';
 import { createPlatformPulse } from './fx/platformPulse.js';
 import { createLevelText } from './fx/levelText.js';
@@ -30,28 +32,37 @@ import { createDebugPanel } from './ui/debugPanel.js';
 import { createNetClient } from './net/client.js';
 import { createRemotePlayers } from './net/remotePlayers.js';
 
-const renderer = new THREE.WebGLRenderer({ antialias: false }); // MSAA lives in the composer target
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({
+  antialias: false, // MSAA lives in the composer target (med/high tiers)
+  powerPreference: 'high-performance',
+});
+const quality = pickQuality(renderer);
+const Q = quality.opts;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, Q.pixelRatio));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = Q.shadows;
 renderer.shadowMap.type = THREE.PCFShadowMap; // softness via shadow.radius (PCFSoft removed in r185)
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 document.body.appendChild(renderer.domElement);
 
-const { scene, followPlayer, setDaylight } = createScene();
+const { scene, followPlayer, setDaylight, setShadows } = createScene({
+  shadows: Q.shadows,
+  shadowMapSize: Q.shadowMapSize,
+  shadowRadius: Q.shadowRadius,
+});
 const camera = new THREE.PerspectiveCamera(
   75, window.innerWidth / window.innerHeight, 0.1, 4000
 );
 camera.rotation.order = 'YXZ';
 
 const sun = createSun(scene);
-const skyDome = createSkyDome(scene);
+const skyDome = createSkyDome(scene, { segments: Q.skySegs });
 const { colliders: platforms, movers, crumblers, unstables } = buildLevel(scene);
 const clouds = initClouds(CLOUDS);
-const cloudScape = createClouds(scene);
+const cloudScape = createClouds(scene, { decoCount: Q.decoClouds });
 const winds = initWind(WIND_ZONES);
 const windStreaks = createWindStreaks(scene);
-const rain = createRain(scene);
+const rain = createRain(scene, { count: Q.rainCount });
 const player = createController(platforms, clouds, winds);
 
 // spawn facing the first platform
@@ -60,7 +71,12 @@ input.yaw = Math.atan2(
   -(first.min.x + first.max.x) / 2,
   -(first.min.z + first.max.z) / 2
 );
-const postfx = createPostFX(renderer, scene, camera);
+const postfx = createPostFX(renderer, scene, camera, {
+  composer: Q.composer,
+  samples: Q.msaaSamples,
+});
+// no shadow map on the low tier — a blob disc keeps the landing-aim signal
+const blobShadow = Q.shadows ? null : createBlobShadow(scene, platforms, player);
 const shockwaves = createShockwaves(scene);
 const platformPulse = createPlatformPulse();
 const bouncePads = createBouncePads(platforms);
@@ -121,7 +137,7 @@ const sunRays = createSunRays(scene, {
   getLevel: () => levelShown,
   isEclipsed: () => eclipse.isDark(),
 });
-const sea = createSea(scene, { getLevel: () => levelShown });
+const sea = createSea(scene, { getLevel: () => levelShown, segs: Q.seaSegs });
 
 // one-shot flavor texts; each fires once per run
 const LEVEL_QUIPS = {
@@ -237,6 +253,8 @@ initInput(renderer.domElement, (locked) => {
 let runTime = 0;
 let levelTime = 0;
 let eatenTimer = 0; // brief darkness between the maw and the respawn
+// reused every frame — the render loop must not allocate
+const audioParams = { speed: 0, velY: 0, inCloud: false, seaProx: 0, storm: 0 };
 
 on('eaten', () => { eatenTimer = 0.35; });
 
@@ -295,7 +313,20 @@ function update(dt) {
   runTime += dt;
 }
 
+let idleTime = 1; // start ready to paint the first menu frame
+
 function render(delta, alpha) {
+  // paused behind an overlay: hold the last frame and repaint at ~1 fps so
+  // the full pipeline isn't burning watts under the menu (debug panel open
+  // keeps live rendering so tweaks stay visible)
+  if (!input.locked && !debugPanel.isOpen()) {
+    idleTime += delta;
+    if (idleTime < 1) return;
+    idleTime = 0;
+  } else {
+    idleTime = 1; // repaint immediately on the next pause frame
+  }
+
   // interpolate 60 Hz physics to display rate
   const p = player.pos, q = player.prevPos;
   camera.position.set(
@@ -307,6 +338,7 @@ function render(delta, alpha) {
   camera.rotation.x = input.pitch;
 
   followPlayer(p);
+  if (blobShadow) blobShadow.update();
   skyDome.follow(camera.position);
   sun.update(delta, camera, player, input.locked);
   eclipse.update(delta, input.locked && !player.won);
@@ -328,13 +360,12 @@ function render(delta, alpha) {
   levelText.update(delta, camera.position);
   hud.update(player.feetY(), levelShown, runTime);
 
-  audio.update(delta, {
-    speed: Math.hypot(player.vel.x, player.vel.y, player.vel.z),
-    velY: player.vel.y,
-    inCloud: player.inCloud,
-    seaProx: player.feetY() - sea.seaLevel(),
-    storm: sea.storm(),
-  });
+  audioParams.speed = Math.hypot(player.vel.x, player.vel.y, player.vel.z);
+  audioParams.velY = player.vel.y;
+  audioParams.inCloud = player.inCloud;
+  audioParams.seaProx = player.feetY() - sea.seaLevel();
+  audioParams.storm = sea.storm();
+  audio.update(delta, audioParams);
 
   const sprinting = input.sprint && Math.hypot(player.vel.x, player.vel.z) > 8;
   // wind rush ramps with fall speed (starts at 25 m/s, maxes at terminal 130)
@@ -350,13 +381,18 @@ const debugPanel = createDebugPanel({
   restartRun,
 });
 
-window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, winds, sun, sunRays, sea, audio, eclipse, rain, net, remotes, TUNING }; // debug/testing handle
+window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, winds, sun, sunRays, sea, audio, eclipse, rain, net, remotes, TUNING, quality, renderer }; // debug/testing handle
 
+let resizeTimer;
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  postfx.setSize(window.innerWidth, window.innerHeight);
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    postfx.setSize(window.innerWidth, window.innerHeight);
+    idleTime = 1; // repaint even while paused
+  }, 150);
 });
 
 startLoop({ update, render });

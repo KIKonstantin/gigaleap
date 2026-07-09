@@ -1,36 +1,60 @@
 // Post-processing chain + camera "feel": drives the jump shader uniforms and
 // a small FOV kick, all decaying exponentially. Subscribes to game events so
 // it never touches the controller.
+//
+// Two render paths, one uniform set:
+//   composer: true  — RenderPass -> JumpFX ShaderPass -> OutputPass, MSAA on
+//                     the explicit target (HalfFloat only at 4x/high tier).
+//   composer: false — direct renderer.render(); tone mapping still applies
+//                     (three compiles it into materials when rendering to the
+//                     canvas), the FOV kick is camera-side anyway, and the
+//                     gameplay-critical veils (eaten-blackout, cloud whiteout)
+//                     move to DOM overlays fed by the same decayed uniforms.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { JumpFXShader } from './jumpFXShader.js';
+import { createScreenVeil } from './screenVeil.js';
 import { on } from '../core/events.js';
 
 const BASE_FOV = 75;
 
-export function createPostFX(renderer, scene, camera) {
+export function createPostFX(renderer, scene, camera, { composer: useComposer = true, samples = 4 } = {}) {
   const size = renderer.getSize(new THREE.Vector2());
-  const pixelRatio = renderer.getPixelRatio();
 
-  // explicit target with MSAA samples — EffectComposer's default has none
-  const target = new THREE.WebGLRenderTarget(
-    size.x * pixelRatio,
-    size.y * pixelRatio,
-    { samples: 4, type: THREE.HalfFloatType }
-  );
-
-  const composer = new EffectComposer(renderer, target);
-  composer.setPixelRatio(pixelRatio);
-  composer.addPass(new RenderPass(scene, camera));
-  const fxPass = new ShaderPass(JumpFXShader);
-  composer.addPass(fxPass);
-  composer.addPass(new OutputPass());
-
-  const u = fxPass.uniforms;
+  // uniforms live outside the composer so the event handlers below and the
+  // DOM veil keep one stable object across path switches (governor downgrade)
+  const u = THREE.UniformsUtils.clone(JumpFXShader.uniforms);
   u.uAspect.value = size.x / size.y;
+
+  let composer = null;
+  let veil = null;
+
+  function buildComposer() {
+    const pixelRatio = renderer.getPixelRatio();
+    // explicit target with MSAA samples — EffectComposer's default has none.
+    // HalfFloat is reserved for the 4x/high tier: half-float MSAA resolve is
+    // slow or broken on many embedded GLES3 drivers.
+    const target = new THREE.WebGLRenderTarget(size.x * pixelRatio, size.y * pixelRatio, {
+      samples,
+      type: samples >= 4 ? THREE.HalfFloatType : THREE.UnsignedByteType,
+    });
+    composer = new EffectComposer(renderer, target);
+    composer.setPixelRatio(pixelRatio);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(new THREE.ShaderMaterial({
+      name: JumpFXShader.name,
+      uniforms: u,
+      vertexShader: JumpFXShader.vertexShader,
+      fragmentShader: JumpFXShader.fragmentShader,
+    })));
+    composer.addPass(new OutputPass());
+  }
+
+  if (useComposer) buildComposer();
+  else veil = createScreenVeil();
 
   let fovKick = 0;
   let speedFov = 0; // widened FOV while sprinting
@@ -110,14 +134,33 @@ export function createPostFX(renderer, scene, camera) {
       camera.updateProjectionMatrix();
     }
 
-    composer.render();
+    if (composer) {
+      composer.render();
+    } else {
+      renderer.render(scene, camera);
+      veil.update(u.uSwallow.value, u.uCloud.value);
+    }
   }
 
   function setSize(width, height) {
+    size.set(width, height);
+    u.uAspect.value = width / height;
+    if (!composer) return;
     composer.setPixelRatio(renderer.getPixelRatio());
     composer.setSize(width, height);
-    u.uAspect.value = width / height;
   }
 
-  return { render, setSize };
+  // governor hook: drop to the direct path at runtime, reclaiming the
+  // composer's render-target VRAM
+  function setEnabled(enable) {
+    if (enable && !composer) {
+      buildComposer();
+    } else if (!enable && composer) {
+      composer.dispose();
+      composer = null;
+      if (!veil) veil = createScreenVeil();
+    }
+  }
+
+  return { render, setSize, setEnabled };
 }
