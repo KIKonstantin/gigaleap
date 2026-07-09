@@ -21,7 +21,8 @@ export const TIERS = Object.freeze({
     // embedded GPUs, and the soft upscale reads fine at couch distance
     pixelRatio: 0.75, shadows: false, shadowMapSize: 512, shadowRadius: 1,
     composer: false, msaaSamples: 0,
-    seaSegs: 48, rainCount: 400, decoClouds: 8, skySegs: 24, lambert: true,
+    seaSegs: 48, rainCount: 400, decoClouds: 8, skySegs: 24,
+    lambert: true, mergeDeco: true,
   }),
 });
 

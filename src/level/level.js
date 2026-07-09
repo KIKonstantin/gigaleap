@@ -1,15 +1,17 @@
-// Builds meshes and collider AABBs from the level data.
-// Each platform gets its own material so landing pulses can drive
-// emissiveIntensity per-platform (see fx/platformPulse.js).
-// Moving platforms' AABBs advance in the physics step (movers.js);
-// their meshes are interpolated here at render rate.
+// Builds collider AABBs from the level data; the visual side is one
+// InstancedMesh (see platformMeshes.js), which attaches plain view records
+// as c.mesh / c.material so the pulse/crumble/unstable/bounce writers keep
+// their per-platform mutation API (fx/platformPulse.js drives per-instance
+// emissive through it). Moving platforms' AABBs advance in the physics step
+// (movers.js); their records are interpolated here at render rate.
 import * as THREE from 'three';
 import { PLATFORMS } from './levelData.js';
+import { createPlatformInstances } from './platformMeshes.js';
 import { initMovers } from './movers.js';
 import { initCrumble } from './crumble.js';
 import { initUnstable } from './unstable.js';
 
-export function buildLevel(scene) {
+export function buildLevel(scene, opts = {}) {
   const colliders = [];
 
   for (const def of PLATFORMS) {
@@ -23,36 +25,24 @@ export function buildLevel(scene) {
     const baseEmissive = def.goal ? 1.4 : def.checkpoint ? 0.55
       : def.move ? 0.18 : def.crumble ? 0.14 : def.dash ? 0.3
       : def.bounce ? 0.2 : def.unstable ? 0.1 : 0;
-    const material = new THREE.MeshStandardMaterial({
-      color: def.color,
-      roughness: 0.85,
-      metalness: 0,
-      emissive: def.unstable ? 0xff5533 : def.color,
-      emissiveIntensity: baseEmissive,
-    });
 
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-    mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-
+    // collider order is load-bearing: platforms[1] aims the spawn camera,
+    // main.js indexes into it for hints, the headless bot replays it
     colliders.push({
       min: { x: x - w / 2, y: y - h / 2, z: z - d / 2 },
       max: { x: x + w / 2, y: y + h / 2, z: z + d / 2 },
       def,
-      mesh,
-      material,
       baseEmissive,
     });
 
     if (def.goal) addGoalBeacon(scene, x, y + h / 2, z);
   }
 
+  const platformView = createPlatformInstances(scene, colliders, opts);
   const movers = initMovers(colliders);
   const crumblers = initCrumble(colliders);
   const unstables = initUnstable(colliders);
-  return { colliders, movers, crumblers, unstables };
+  return { colliders, movers, crumblers, unstables, platformView };
 }
 
 // meshes follow the physics AABBs, interpolated for high-refresh displays

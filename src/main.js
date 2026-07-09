@@ -57,9 +57,14 @@ camera.rotation.order = 'YXZ';
 
 const sun = createSun(scene);
 const skyDome = createSkyDome(scene, { segments: Q.skySegs });
-const { colliders: platforms, movers, crumblers, unstables } = buildLevel(scene);
+const { colliders: platforms, movers, crumblers, unstables, platformView } =
+  buildLevel(scene, { lambert: Q.lambert });
 const clouds = initClouds(CLOUDS);
-const cloudScape = createClouds(scene, { decoCount: Q.decoClouds });
+const cloudScape = createClouds(scene, {
+  decoCount: Q.decoClouds,
+  lambert: Q.lambert,
+  mergeDeco: Q.mergeDeco,
+});
 const winds = initWind(WIND_ZONES);
 const windStreaks = createWindStreaks(scene);
 const rain = createRain(scene, { count: Q.rainCount });
@@ -137,7 +142,11 @@ const sunRays = createSunRays(scene, {
   getLevel: () => levelShown,
   isEclipsed: () => eclipse.isDark(),
 });
-const sea = createSea(scene, { getLevel: () => levelShown, segs: Q.seaSegs });
+const sea = createSea(scene, {
+  getLevel: () => levelShown,
+  segs: Q.seaSegs,
+  lambert: Q.lambert,
+});
 
 // one-shot flavor texts; each fires once per run
 const LEVEL_QUIPS = {
@@ -356,6 +365,7 @@ function render(delta, alpha) {
   platformPulse.update(delta);
   bouncePads.update(delta);
   syncUnstableMeshes(unstables, levelTime); // after the pulse so the wobble glow wins
+  platformView.sync(); // flush ALL platform records -> instance buffers; keep last
   remotes.update();
   levelText.update(delta, camera.position);
   hud.update(player.feetY(), levelShown, runTime);

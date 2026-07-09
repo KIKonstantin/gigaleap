@@ -34,18 +34,17 @@ function buildCloudGeometry(r, seed) {
   return merged;
 }
 
-export function createClouds(scene, { decoCount = CLOUD_DECO.length } = {}) {
-  const material = new THREE.MeshStandardMaterial({
-    color: 0xf4f7f9,
-    flatShading: true,
-    transparent: true,
-    opacity: 0.88,
-    roughness: 1,
-    metalness: 0,
-    // keep the undersides airy — a shadowed grey belly reads as a boulder
-    emissive: 0xf4f7f9,
-    emissiveIntensity: 0.38,
-  });
+export function createClouds(scene, { decoCount = CLOUD_DECO.length, lambert = false, mergeDeco = false } = {}) {
+  // keep the undersides airy — a shadowed grey belly reads as a boulder
+  const airy = { emissive: 0xf4f7f9, emissiveIntensity: 0.38 };
+  const material = lambert
+    ? new THREE.MeshLambertMaterial({
+        color: 0xf4f7f9, flatShading: true, transparent: true, opacity: 0.88, ...airy,
+      })
+    : new THREE.MeshStandardMaterial({
+        color: 0xf4f7f9, flatShading: true, transparent: true, opacity: 0.88,
+        roughness: 1, metalness: 0, ...airy,
+      });
 
   const spawn = (def, seed) => {
     const mesh = new THREE.Mesh(buildCloudGeometry(def.r, seed), material);
@@ -55,7 +54,24 @@ export function createClouds(scene, { decoCount = CLOUD_DECO.length } = {}) {
   };
 
   const gameplay = CLOUDS.map((def, i) => spawn(def, 7001 + i * 131));
-  const deco = CLOUD_DECO.slice(0, decoCount).map((def, i) => spawn(def, 9001 + i * 173));
+
+  // low tier: bake the scenery clouds into ONE static mesh (one draw call,
+  // no per-frame drift); other tiers keep the individual drifting meshes
+  let deco = [];
+  if (mergeDeco) {
+    const parts = CLOUD_DECO.slice(0, decoCount).map((def, i) => {
+      const g = buildCloudGeometry(def.r, 9001 + i * 173);
+      g.translate(def.pos[0], def.pos[1], def.pos[2]);
+      return g;
+    });
+    if (parts.length) {
+      const merged = mergeGeometries(parts);
+      for (const p of parts) p.dispose();
+      scene.add(new THREE.Mesh(merged, material));
+    }
+  } else {
+    deco = CLOUD_DECO.slice(0, decoCount).map((def, i) => spawn(def, 9001 + i * 173));
+  }
 
   function update(time) {
     for (let i = 0; i < gameplay.length; i++) {
