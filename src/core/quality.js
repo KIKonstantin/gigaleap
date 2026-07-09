@@ -1,6 +1,6 @@
 // Quality tiers for constrained devices (smart displays, Pi-class GPUs).
-// One frozen table, resolved once at boot: URL param -> saved downgrade ->
-// hardware heuristic. Options flow into the THREE-side factories only — the
+// One frozen table, resolved once at boot: URL param -> saved choice (menu
+// selection or governor downgrade) -> hardware heuristic. Options flow into the THREE-side factories only — the
 // pure-JS physics modules never see a tier, so gameplay is identical on a
 // fridge and a gaming rig.
 export const TIER_ORDER = ['low', 'med', 'high'];

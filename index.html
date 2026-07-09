@@ -31,7 +31,6 @@
       display: flex; align-items: center; justify-content: center;
       background: rgba(223, 232, 240, 0.55);
       backdrop-filter: blur(6px);
-      cursor: pointer;
     }
     .overlay .card {
       text-align: center; color: #3d4a5c; padding: 48px 64px;
@@ -48,6 +47,19 @@
     }
     @keyframes pulse { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.35; } }
     .hidden { display: none !important; }
+
+    .menu { margin-top: 30px; font-size: 14px; letter-spacing: 0.2em; }
+    .menu .item { padding: 10px 0; cursor: pointer; opacity: 0.85; }
+    .menu .item:hover { opacity: 1; }
+    .menu .cta { margin-top: 0; }
+    #menuPlay { font-size: 17px; }
+    .q-opt { cursor: pointer; opacity: 0.4; }
+    .q-opt:hover { opacity: 0.85; }
+    .q-opt.active {
+      opacity: 1; font-weight: 700;
+      text-decoration: underline; text-underline-offset: 4px;
+    }
+    .q-sep { opacity: 0.25; margin: 0 7px; }
 
     #winOverlay h1 { color: #b8860b; }
     #winStats { font-size: 15px; letter-spacing: 0.12em; line-height: 2; margin-bottom: 6px; }
@@ -70,15 +82,31 @@
     <div class="card">
       <h1>GIGALEAP</h1>
       <div class="sub">CLIMB TO THE GOLDEN LIGHT</div>
+      <div class="menu">
+        <div class="item cta" id="menuPlay">PLAY</div>
+        <div class="item" id="menuQuality">QUALITY:
+          <span class="q-opt" data-tier="high">HIGH</span><span class="q-sep">|</span><span class="q-opt" data-tier="med">MID</span><span class="q-sep">|</span><span class="q-opt" data-tier="low">LOW</span>
+        </div>
+        <div class="item" id="menuControls">CONTROLS</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="controlsOverlay" class="overlay hidden">
+    <div class="card">
+      <h1>CONTROLS</h1>
       <div class="controls">
         WASD — MOVE<br />
         MOUSE — LOOK<br />
         SHIFT — SPRINT<br />
-        SPACE — JUMP<br />
+        SPACE — JUMP (HOLD FOR FULL HEIGHT)<br />
         CTRL — AIR DASH<br />
-        R — RESTART
+        R — RESTART<br />
+        M — MUTE
       </div>
-      <div class="cta">CLICK TO PLAY</div>
+      <div class="menu">
+        <div class="item" id="controlsBack">BACK</div>
+      </div>
     </div>
   </div>
 

@@ -28,6 +28,7 @@ import { createShockwaves } from './fx/shockwave.js';
 import { createPlatformPulse } from './fx/platformPulse.js';
 import { createLevelText } from './fx/levelText.js';
 import { createHUD } from './ui/hud.js';
+import { createMenu } from './ui/menu.js';
 import { createDebugPanel } from './ui/debugPanel.js';
 import { createNetClient } from './net/client.js';
 import { createRemotePlayers } from './net/remotePlayers.js';
@@ -262,10 +263,17 @@ on('land', ({ platform }) => {
 
 const audio = createAudio();
 
+const menu = createMenu({
+  canvas: renderer.domElement,
+  tier: quality.tier,
+  isRunActive: () => runTime > 0 && !player.won,
+});
+
 initInput(renderer.domElement, (locked) => {
   audio.setLocked(locked);
   if (locked) {
     hud.hideStart();
+    menu.hideDialogs();
     // the spawn starts already grounded (no landing event), so LEVEL 1
     // pops on first entry instead
     if (levelShown === 0) showLevelAt(checkpoints[0], 1);

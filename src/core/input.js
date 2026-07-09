@@ -19,9 +19,9 @@ export const input = {
 };
 
 export function initInput(canvas, onLockChange) {
-  // document-level: the start overlay covers the canvas, and its click
-  // must also lock the pointer
-  document.addEventListener('click', () => {
+  // canvas only: the menu's PLAY button requests the lock explicitly
+  // (ui/menu.js) — overlay clicks must NOT start the game
+  canvas.addEventListener('click', () => {
     if (!input.locked) canvas.requestPointerLock();
   });
 

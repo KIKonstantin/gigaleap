@@ -17,7 +17,8 @@ npm install
 npm run dev
 ```
 
-Open the printed URL, click to lock the pointer.
+Open the printed URL and hit PLAY (the home menu also has a quality
+selector and the controls reference).
 
 | Key | Action |
 | --- | --- |
@@ -70,7 +71,8 @@ and a Raspberry Pi-class embedded display. Three tiers (`src/core/quality.js`):
   grid, scenery clouds baked into one static mesh.
 
 The tier is picked at boot from `?quality=low|med|high` (wins always), a
-saved downgrade in localStorage, or a GPU/UA heuristic. A frame governor
+saved choice in localStorage (the home-menu QUALITY selector, or the
+governor after a downgrade), or a GPU/UA heuristic. A frame governor
 watches the rolling frame time while playing and steps the tier down if the
 device can't hold 30 fps, persisting the choice for the next load.
 
