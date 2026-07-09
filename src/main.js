@@ -27,6 +27,8 @@ import { createPlatformPulse } from './fx/platformPulse.js';
 import { createLevelText } from './fx/levelText.js';
 import { createHUD } from './ui/hud.js';
 import { createDebugPanel } from './ui/debugPanel.js';
+import { createNetClient } from './net/client.js';
+import { createRemotePlayers } from './net/remotePlayers.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: false }); // MSAA lives in the composer target
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -64,6 +66,45 @@ const platformPulse = createPlatformPulse();
 const bouncePads = createBouncePads(platforms);
 const levelText = createLevelText(scene);
 const hud = createHUD();
+
+// ghost multiplayer: everyone on the site shares one room; other players
+// render as colored low-poly ghosts (no collision). Optional — with no
+// server configured/reachable the game is plain single-player.
+const remotes = createRemotePlayers(scene);
+let net = { enabled: false };
+try {
+  net = createNetClient({
+    getState: () => ({
+      x: player.pos.x, y: player.pos.y, z: player.pos.z,
+      yaw: input.yaw, grounded: player.grounded, won: player.won,
+    }),
+    onRoster: (list) => {
+      remotes.clear();
+      for (const p of list) remotes.add(p.id, p.hue, p.name, p.s);
+    },
+    onJoin: (p) => remotes.add(p.id, p.hue, p.name),
+    onLeave: (id) => remotes.remove(id),
+    onStates: (s, n, t) => {
+      // self-heal a missed join: spawn a ghost for anyone in the batch we
+      // know from the roster but aren't rendering yet
+      for (const id in s) {
+        if (id === net.id() || remotes.has(id)) continue;
+        const p = net.players().get(id);
+        if (p) remotes.add(id, p.hue, p.name);
+      }
+      remotes.applyStates(s, t, net.id());
+    },
+    onCount: (n) => hud.setPlayers(n),
+    onStatus: (up) => {
+      if (!up) {
+        remotes.clear();
+        hud.setPlayers(1);
+      }
+    },
+  });
+} catch (e) {
+  console.warn('multiplayer disabled:', e);
+}
 
 // big in-the-air "LEVEL {N}" letters when a new checkpoint band is reached;
 // the start pad counts as checkpoint 0, so the first landing shows LEVEL 1
@@ -283,6 +324,7 @@ function render(delta, alpha) {
   platformPulse.update(delta);
   bouncePads.update(delta);
   syncUnstableMeshes(unstables, levelTime); // after the pulse so the wobble glow wins
+  remotes.update();
   levelText.update(delta, camera.position);
   hud.update(player.feetY(), levelShown, runTime);
 
@@ -308,7 +350,7 @@ const debugPanel = createDebugPanel({
   restartRun,
 });
 
-window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, winds, sun, sunRays, sea, audio, eclipse, rain, TUNING }; // debug/testing handle
+window.__ascent = { player, input, on, movers, platforms, crumblers, unstables, clouds, winds, sun, sunRays, sea, audio, eclipse, rain, net, remotes, TUNING }; // debug/testing handle
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;

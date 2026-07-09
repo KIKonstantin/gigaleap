@@ -1,0 +1,6 @@
+{
+  "$schema": "https://www.partykit.io/schema.json",
+  "name": "gigaleap",
+  "main": "party/index.js",
+  "compatibilityDate": "2026-07-08"
+}

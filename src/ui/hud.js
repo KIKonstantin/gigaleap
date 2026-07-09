@@ -3,6 +3,7 @@ export function createHUD() {
   const levelEl = document.getElementById('level');
   const heightEl = document.getElementById('height');
   const timeEl = document.getElementById('time');
+  const playersEl = document.getElementById('players');
   const startOverlay = document.getElementById('startOverlay');
   const winOverlay = document.getElementById('winOverlay');
   const winStats = document.getElementById('winStats');
@@ -10,6 +11,7 @@ export function createHUD() {
   let lastHeight = -Infinity;
   let lastLevel = -1;
   let lastSecond = -1;
+  let lastPlayers = -1;
 
   function update(height, level, time) {
     const h = Math.max(height, 0);
@@ -36,8 +38,17 @@ export function createHUD() {
     startOverlay.classList.add('hidden');
   }
 
+  // set on network events (join/leave/states), not per frame like update()
+  function setPlayers(n) {
+    if (n !== lastPlayers) {
+      playersEl.textContent = String(n);
+      lastPlayers = n;
+    }
+  }
+
   return {
     update,
+    setPlayers,
     showWin,
     hideWin: () => winOverlay.classList.add('hidden'),
     isWinShown: () => !winOverlay.classList.contains('hidden'),
